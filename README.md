@@ -1,4 +1,4 @@
-# gr2js
+# gr2reader
 
 Pure-JavaScript reader for RAD Granny 3D **`.gr2`** files. No `granny2.dll`, no native
 addons, no build step — runs in Node and the browser.
@@ -29,7 +29,7 @@ replacement for that native pipeline.
 
 ```js
 import { readFileSync } from "node:fs";
-import { readGr2, curves, tangents } from "gr2js";
+import { readGr2, curves, tangents } from "gr2reader";
 
 const result = readGr2(readFileSync("model.gr2"), {
   emit: "gr2_json",         // "gr2_json" (default) | "raw" (the granny_file_info graph)
@@ -41,7 +41,7 @@ const result = readGr2(readFileSync("model.gr2"), {
 ### CLI
 
 ```sh
-gr2js model.gr2            # writes model.gr2_json next to the input
+gr2reader model.gr2            # writes model.gr2_json next to the input
 ```
 
 ## Options
@@ -66,7 +66,7 @@ gr2js model.gr2            # writes model.gr2_json next to the input
   namespace objects group the same helpers:
 
   ```js
-  import { curves, decodeCurve } from "gr2js";
+  import { curves, decodeCurve } from "gr2reader";
   const { knots, controls, degree, dimension } = curves.decode(curveJson, 4);
   const same = decodeCurve(curveJson, 4);
   ```

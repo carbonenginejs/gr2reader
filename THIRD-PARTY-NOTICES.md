@@ -1,6 +1,6 @@
 # Third-party notices
 
-`gr2js` is licensed **MIT** (see [LICENSE](./LICENSE)). It contains no RAD/Granny
+`gr2reader` is licensed **MIT** (see [LICENSE](./LICENSE)). It contains no RAD/Granny
 proprietary code and does not link `granny2.dll`. The two section decompressors are
 pure-JS ports of open reverse-engineering work, both under permissive licenses
 compatible with MIT. Provenance and license texts follow.
@@ -52,7 +52,7 @@ DEALINGS IN THE SOFTWARE.
 powzix/ooz `bitknit.cpp`.
 
 > **STATUS — blocks MIT.** Because this file currently derives from Knit's EUPL-1.2
-> expression, `gr2js` cannot be released under MIT as-is (EUPL-1.2 reciprocity applies).
+> expression, `gr2reader` cannot be released under MIT as-is (EUPL-1.2 reciprocity applies).
 > To ship MIT, `bitknit2.js` must be re-derived directly from pybg3's MIT `rans.h`.
 > That re-base was attempted and reverted (the port lost Granny's section framing);
 > it is **deferred**. Until it lands, treat the combined work as **EUPL-1.2**, and the

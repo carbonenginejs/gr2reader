@@ -2,7 +2,7 @@
 /**
  * Command-line converter for .gr2 files.
  *
- * Usage: gr2js <input.gr2> [-o out.gr2_json] [--unpack-tangents] [--raw] [--stdout].
+ * Usage: gr2reader <input.gr2> [-o out.gr2_json] [--unpack-tangents] [--raw] [--stdout].
  * The default output path strips the input's final extension and appends .gr2_json.
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -23,7 +23,7 @@ for (let i = 0; i < argv.length; i++)
     else if (a === "-o" || a === "--out") out = argv[++i];
     else if (a === "-h" || a === "--help") { usage(); process.exit(0); }
     else if (!input) input = a;
-    else { console.error(`gr2js: unexpected argument "${a}"`); process.exit(2); }
+    else { console.error(`gr2reader: unexpected argument "${a}"`); process.exit(2); }
 }
 
 if (!input) { usage(); process.exit(2); }
@@ -35,7 +35,7 @@ if (!input) { usage(); process.exit(2); }
  */
 function usage()
 {
-    console.error("usage: gr2js <input.gr2> [-o out.gr2_json] [--unpack-tangents] [--raw] [--stdout]");
+    console.error("usage: gr2reader <input.gr2> [-o out.gr2_json] [--unpack-tangents] [--raw] [--stdout]");
 }
 
 /**
@@ -62,11 +62,11 @@ try
     {
         const dest = out || defaultOut(input);
         writeFileSync(dest, text);
-        console.error(`gr2js: wrote ${dest} (${text.length} bytes)`);
+        console.error(`gr2reader: wrote ${dest} (${text.length} bytes)`);
     }
 }
 catch (e)
 {
-    console.error(`gr2js: ${e.message}`);
+    console.error(`gr2reader: ${e.message}`);
     process.exit(1);
 }

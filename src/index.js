@@ -1,5 +1,5 @@
 /**
- * Public package entry point for gr2js.
+ * Public package entry point for gr2reader.
  *
  * Exposes the high-level GR2 reader, grouped lowercase namespaces, and all
  * direct helper exports from the flattened source modules.
@@ -74,7 +74,7 @@ export function readGr2(buffer, options = {})
 
     if (emit !== OUTPUT_GR2_JSON)
     {
-        throw new Error(`gr2js: unknown emit option "${emit}"`);
+        throw new Error(`gr2reader: unknown emit option "${emit}"`);
     }
 
     const json = emitGr2Json(parsed.fileInfo, parsed.version);

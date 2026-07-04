@@ -1,5 +1,5 @@
 {
-  "name": "gr2js",
+  "name": "gr2reader",
   "version": "0.1.0",
   "description": "Pure-JavaScript reader for RAD Granny 3D .gr2 files — no granny2.dll. Decodes None/Oodle1/BitKnit2 sections, walks the Granny type tree, and emits gr2_json.",
   "type": "module",
@@ -8,7 +8,7 @@
     ".": "./src/index.js"
   },
   "bin": {
-    "gr2js": "bin/gr2js.js"
+    "gr2reader": "bin/gr2reader.js"
   },
   "engines": {
     "node": ">=18"

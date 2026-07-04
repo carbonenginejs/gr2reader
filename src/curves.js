@@ -156,7 +156,7 @@ export function identityControls(dimension)
             return [ 1, 0, 0, 0, 1, 0, 0, 0, 1 ];
 
         default:
-            throw new Error(`gr2js: invalid curve dimension ${dimension}`);
+            throw new Error(`gr2reader: invalid curve dimension ${dimension}`);
     }
 }
 
@@ -174,7 +174,7 @@ export function exactDiv(numerator, divisor, what)
     const v = numerator / divisor;
     if (!Number.isInteger(v))
     {
-        throw new Error(`gr2js: curve ${what}: ${numerator} is not divisible by ${divisor}`);
+        throw new Error(`gr2reader: curve ${what}: ${numerator} is not divisible by ${divisor}`);
     }
     return v;
 }
@@ -742,7 +742,7 @@ for (let i = 0; i < CURVE_DECODERS.length; i++)
 {
     if (CURVE_DECODERS[i].format !== i)
     {
-        throw new Error(`gr2js: curve decoder table corrupt at format ${i}`);
+        throw new Error(`gr2reader: curve decoder table corrupt at format ${i}`);
     }
 }
 
@@ -759,20 +759,20 @@ export function decodeCurve(curveJson, dimension)
 {
     if (!curveJson || typeof curveJson.format !== "number")
     {
-        throw new Error("gr2js: decodeCurve requires a curve object with a numeric format");
+        throw new Error("gr2reader: decodeCurve requires a curve object with a numeric format");
     }
 
     const dec = CURVE_DECODERS[curveJson.format];
     if (!dec)
     {
-        throw new Error(`gr2js: unsupported granny curve format ${curveJson.format}`);
+        throw new Error(`gr2reader: unsupported granny curve format ${curveJson.format}`);
     }
 
     const { knots, controls, dimension: dim } = dec.decode(curveJson, dimension);
     if (dimension && dim && dim !== dimension)
     {
         throw new Error(
-            `gr2js: curve format ${curveJson.format} decoded dimension ${dim} does not match track dimension ${dimension}`);
+            `gr2reader: curve format ${curveJson.format} decoded dimension ${dim} does not match track dimension ${dimension}`);
     }
 
     return {
