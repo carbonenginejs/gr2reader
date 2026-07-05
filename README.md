@@ -1,4 +1,4 @@
-# reader-gr2
+# @carbonenginejs/reader-gr2
 
 Pure-JavaScript CarbonEngineJS-facing reader for RAD Granny 3D `.gr2` files. No
 `granny2.dll`, no native addons, no build step; it runs in Node and the browser.
@@ -16,7 +16,7 @@ pipeline helpers and codecs live under `src/core` so the public class surface
 stays easy to review.
 
 ```js
-import CjsGr2Reader from "reader-gr2";
+import CjsGr2Reader from "@carbonenginejs/reader-gr2";
 
 const reader = new CjsGr2Reader({
   emit: "json",             // "json" (default) | "raw"
@@ -49,7 +49,7 @@ const text = JSON.stringify(reader.ToJSON(json));
 The named export is the same class for callers that prefer named imports:
 
 ```js
-import { CjsGr2Reader } from "reader-gr2";
+import { CjsGr2Reader } from "@carbonenginejs/reader-gr2";
 ```
 
 ## Reader Rules
@@ -75,10 +75,10 @@ import { CjsGr2Reader } from "reader-gr2";
 - Rebuild options generate missing data from available geometry. Repairing
   existing-but-bad data is a separate future concern.
 - Shared schema, decorators, registries, and type utilities belong in the future
-  `core-types` package.
+  `@carbonenginejs/core-types` package.
 - Tangent helpers stay in this package for now because unpacked CCP tangent
   frames are part of GR2 post-processing. They are expected to move to a future
-  shared `core-maths` package once that package exists.
+  shared `@carbonenginejs/core-maths` package once that package exists.
 
 ## Options
 
@@ -186,7 +186,7 @@ const unpacked = CjsGr2Reader.tangents.unpack(mesh);
 
 Current license: `EUPL-1.2`.
 
-`reader-gr2` is currently EUPL-1.2 because `src/core/bitknit2.js` derives from
+`@carbonenginejs/reader-gr2` is currently EUPL-1.2 because `src/core/bitknit2.js` derives from
 EUPL-1.2 prior work. The intended future target is MIT once that implementation
 is replaced, removed, or re-derived from permissively licensed sources. See
 `LICENSE`, `NOTICE`, and `THIRD-PARTY-NOTICES.md` for provenance and current
