@@ -90,7 +90,7 @@ import { CjsGr2Reader } from "@carbonenginejs/reader-gr2";
 
 `emit: "json"` is the default. It returns a stable, JSON-compatible graph with
 deinterleaved vertex channels, triangle-index groups, embedded model skeletons,
-and compact animation curve records:
+and compact animation curve records. Square-bracketed fields are conditional:
 
 ```text
 Root
@@ -110,13 +110,13 @@ Root
 |   `-- indices: IndexGroup[]
 |       `-- name, bytesPerIndex, faces
 |-- models: Model[]
-|   |-- name, meshBindings, extendedData?
+|   |-- name, meshBindings, [extendedData]
 |   `-- skeleton: Skeleton
-|       |-- name, extendedData?
+|       |-- name, [extendedData]
 |       `-- bones: Bone[]
-|           `-- name, parentIndex, flag, position?, orientation?, scaleShear?, extendedData?
+|           `-- name, parentIndex, flag, [position], [orientation], [scaleShear], [extendedData]
 `-- animations: Animation[]
-    |-- name, duration, timeStep, oversampling, defaultLoopCount, flags, extendedData?
+    |-- name, duration, timeStep, oversampling, defaultLoopCount, flags, [extendedData]
     `-- trackGroups: TrackGroup[]
         `-- transformTracks: TransformTrack[]
             |-- name, flags
@@ -126,11 +126,11 @@ Root
 
 Curve
 |-- format, degree
-|-- raw format-specific fields
-|   `-- oneOverKnotScaleTrunc, controlScaleOffsets, scaleOffsetTableEntries,
-|       oneOverKnotScale, controlScales, controlOffsets, knotsControls, ...
-`-- decoded fields, when `decompressCurves` is enabled
-    `-- dimension, knots, controls
+|-- [dimension], [knots], [controls]
+|   `-- present for uncompressed curves and for supported curves after `decompressCurves`
+|-- [oneOverKnotScaleTrunc], [controlScaleOffsets], [scaleOffsetTableEntries]
+|-- [oneOverKnotScale], [controlScales], [controlOffsets], [knotsControls]
+`-- [error]
 ```
 
 `Curve` records always include `format` and `degree`, plus fields required by
