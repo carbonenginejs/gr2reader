@@ -84,7 +84,61 @@ import { CjsGr2Reader } from "@carbonenginejs/reader-gr2";
   `@carbonenginejs/core-types` package.
 - Tangent helpers stay in this package for now because unpacked CCP tangent
   frames are part of GR2 post-processing. They are expected to move to a future
-  shared `@carbonenginejs/core-maths` package once that package exists.
+  shared `@carbonenginejs/core-math` package once that package exists.
+
+## GR2 JSON Graph
+
+`emit: "json"` is the default. It returns a stable, JSON-compatible graph with
+deinterleaved vertex channels, triangle-index groups, embedded model skeletons,
+and compact animation curve records:
+
+```text
+Root
+|-- grannyFileFormatRevision, grannyFileSource
+|-- meshes: Mesh[]
+|   |-- name, minBounds, maxBounds
+|   |-- boneBindings: BoneBinding[]
+|   |   `-- name, minBounds, maxBounds
+|   |-- morphTargets: MorphTarget[]
+|   |   |-- name, dataIsDeltas
+|   |   `-- vertex: VertexChannels
+|   |-- vertex: VertexChannels
+|   |   |-- position, normal, tangent, binormal
+|   |   |-- texcoord0, texcoord1
+|   |   |-- blendIndice, blendWeight
+|   |   `-- all channels are flat numeric arrays
+|   `-- indices: IndexGroup[]
+|       `-- name, bytesPerIndex, faces
+|-- models: Model[]
+|   |-- name, meshBindings, extendedData?
+|   `-- skeleton: Skeleton
+|       |-- name, extendedData?
+|       `-- bones: Bone[]
+|           `-- name, parentIndex, flag, position?, orientation?, scaleShear?, extendedData?
+`-- animations: Animation[]
+    |-- name, duration, timeStep, oversampling, defaultLoopCount, flags, extendedData?
+    `-- trackGroups: TrackGroup[]
+        `-- transformTracks: TransformTrack[]
+            |-- name, flags
+            |-- orientation: Curve
+            |-- position: Curve
+            `-- scaleShear: Curve
+
+Curve
+|-- format, degree
+|-- raw format-specific fields
+|   `-- oneOverKnotScaleTrunc, controlScaleOffsets, scaleOffsetTableEntries,
+|       oneOverKnotScale, controlScales, controlOffsets, knotsControls, ...
+`-- decoded fields, when `decompressCurves` is enabled
+    `-- dimension, knots, controls
+```
+
+`Curve` records always include `format` and `degree`, plus fields required by
+that Granny curve format, such as `dimension`, `knots`, `controls`,
+`controlScales`, `controlOffsets`, `knotsControls`, or an `error` message.
+When `decompressCurves` is enabled, supported compressed curves also gain
+decoded `knots`, `controls`, and `dimension` fields while keeping their raw
+format-specific data.
 
 ## Options
 
