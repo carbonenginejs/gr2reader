@@ -1,4 +1,4 @@
-# @carbonenginejs/reader-gr2
+# @carbonenginejs/format-gr2
 
 Pure-JavaScript CarbonEngineJS-facing reader for RAD Granny 3D `.gr2` files. No
 `granny2.dll`, no native addons, no build step; it runs in Node and the browser.
@@ -7,7 +7,7 @@ It decodes every section-compression codec used by current EVE Online assets
 (None, Oodle1, BitKnit2), reconstructs the Granny object graph by walking the
 file's embedded type tree, and emits GR2 JSON or caller-supplied classes.
 
-This reader targets GR2 assets and packed tangent conventions used by
+This format profile targets GR2 assets and packed tangent conventions used by
 CarbonEngine and Fenris Creations (CCP Games). The tangent-frame math is a
 JavaScript implementation derived from observed EVE/CarbonEngine shader
 behavior; no Fenris Creations (CCP Games) shader source is copied here. See
@@ -16,21 +16,21 @@ behavior; no Fenris Creations (CCP Games) shader source is copied here. See
 ## Install
 
 ```sh
-npm install @carbonenginejs/reader-gr2
+npm install @carbonenginejs/format-gr2
 ```
 
 ## Public API
 
-The package root exports one public class: `CjsGr2Reader`. The `Cjs` prefix
-marks this as a CarbonEngineJS reader/construction boundary, not an engine
-runtime class. The exposed class lives in `src/CjsGr2Reader.js`; internal read
+The package root exports one public class: `CjsFormatGr2`. The `Cjs` prefix
+marks this as a CarbonEngineJS format/construction boundary, not an engine
+runtime class. The exposed class lives in `src/CjsFormatGr2.js`; internal read
 pipeline helpers and codecs live under `src/core` so the public class surface
 stays easy to review.
 
 ```js
-import CjsGr2Reader from "@carbonenginejs/reader-gr2";
+import CjsFormatGr2 from "@carbonenginejs/format-gr2";
 
-const reader = new CjsGr2Reader({
+const reader = new CjsFormatGr2({
   emit: "json",             // "json" (default) | "raw"
   decompressCurves: false,  // opt-in: resolve compressed granny curves
   unpackTangents: false,    // opt-in: unpack packed CCP tangent frames
@@ -61,7 +61,7 @@ const text = JSON.stringify(reader.ToJSON(json));
 The named export is the same class for callers that prefer named imports:
 
 ```js
-import { CjsGr2Reader } from "@carbonenginejs/reader-gr2";
+import { CjsFormatGr2 } from "@carbonenginejs/format-gr2";
 ```
 
 ## Reader Rules
@@ -71,16 +71,16 @@ import { CjsGr2Reader } from "@carbonenginejs/reader-gr2";
   and `SetClass` out of the camelCase/property namespace used by Carbon data,
   avoiding collisions such as an `emit` property versus an eventual
   `emit(event)` instance method.
-- Static one-shot methods are camelCase because they live on `CjsGr2Reader`
+- Static one-shot methods are camelCase because they live on `CjsFormatGr2`
   itself, not on hydrated CarbonClass instances.
-- JSON builds use `reader.Read(buffer)` or static `CjsGr2Reader.read(buffer)`.
+- JSON builds use `reader.Read(buffer)` or static `CjsFormatGr2.read(buffer)`.
   They return GR2 JSON by default.
 - Class builds use the same read path with configured classes. Use
   `reader.SetClass(type, Class)`, `reader.SetClasses(classes)`, or pass
   `classes` in the options object.
-- Instantiate `new CjsGr2Reader(options)` when the same build rules should be
+- Instantiate `new CjsFormatGr2(options)` when the same build rules should be
   reused; static methods are allocation-free one-shot convenience wrappers.
-- `ToJSON` / `toJSON` converts reader output to a JSON-compatible value. It is
+- `ToJSON` / `toJSON` converts format output to a JSON-compatible value. It is
   not a binary `.gr2` writer and does not return JSON text.
 - Conversion options preserve authored data while changing representation, such
   as `decompressCurves` and `unpackTangents`.
@@ -169,10 +169,10 @@ format-specific data.
 - Missing-channel rebuild options also accept rule functions. They receive
   `{ reader, options, raw, json, mesh, meshIndex, feature, channel }` and must
   return `true` or `false`.
-- `classes`: optional for `new CjsGr2Reader(options)`, `Read`, and static
+- `classes`: optional for `new CjsFormatGr2(options)`, `Read`, and static
   `read`. Maps node keys to constructors that follow the class hydration
   contract below; omitted keys remain plain objects. Accepted keys are shown in
-  the example above and exposed as `CjsGr2Reader.CLASS_KEYS`.
+  the example above and exposed as `CjsFormatGr2.CLASS_KEYS`.
 
 ## Class Hydration Contract
 
@@ -191,7 +191,7 @@ class implements `toJSON`, `ToJSON` / `toJSON` will use it during JSON-compatibl
 conversion.
 
 The class map accepted by `SetClasses(classes)` and `options.classes` can contain
-only the keys in `CjsGr2Reader.CLASS_KEYS`. `SetClass(type, Class)` accepts one
+only the keys in `CjsFormatGr2.CLASS_KEYS`. `SetClass(type, Class)` accepts one
 of those same keys as its `type` argument.
 
 ```js
@@ -235,24 +235,24 @@ numeric arrays. Missing channels are empty arrays.
 ## CLI
 
 ```sh
-reader-gr2 model.gr2            # writes model.json next to the input
+format-gr2 model.gr2            # writes model.json next to the input
 gr2reader model.gr2             # legacy alias
 ```
 
 ## Helper Namespaces
 
-Helper namespaces are static properties on `CjsGr2Reader`:
+Helper namespaces are static properties on `CjsFormatGr2`:
 
 ```js
-const decoded = CjsGr2Reader.curves.decode(curveJson, 4);
-const unpacked = CjsGr2Reader.tangents.unpack(mesh);
+const decoded = CjsFormatGr2.curves.decode(curveJson, 4);
+const unpacked = CjsFormatGr2.tangents.unpack(mesh);
 ```
 
 ## License / Attribution
 
 Current license: `EUPL-1.2`.
 
-`@carbonenginejs/reader-gr2` is currently EUPL-1.2 because `src/core/bitknit2.js` derives from
+`@carbonenginejs/format-gr2` is currently EUPL-1.2 because `src/core/bitknit2.js` derives from
 EUPL-1.2 prior work. The intended future target is MIT once that implementation
 is replaced, removed, or re-derived from permissively licensed sources. See
 `LICENSE`, `NOTICE`, and `THIRD-PARTY-NOTICES.md` for provenance and current

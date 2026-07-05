@@ -1,5 +1,5 @@
 /**
- * Exposed CarbonEngineJS-facing GR2 reader class.
+ * Exposed CarbonEngineJS-facing GR2 format class.
  *
  * Keep this file small and reviewable: parsing, conversion, rebuild, and JSON
  * helper glue live in core/helpers.js.
@@ -24,11 +24,11 @@ import {
 /**
  * CarbonEngineJS-facing GR2 reader.
  *
- * The Cjs prefix marks this as a JavaScript reader/construction boundary. It
+ * The Cjs prefix marks this as a JavaScript format/construction boundary. It
  * can emit plain GR2 JSON data or hydrate caller-supplied CarbonEngineJS-style
  * classes without pretending those classes are the engine runtime itself.
  */
-export class CjsGr2Reader
+export class CjsFormatGr2
 {
    
     #emit = DEFAULT_VALUES.emit;
@@ -40,9 +40,9 @@ export class CjsGr2Reader
     #classes = {};
 
     /**
-     * Create a reusable reader profile.
+     * Create a reusable format profile.
      *
-     * @param {object} [options] Default reader/build values.
+     * @param {object} [options] Default format/build values.
      */
     constructor(options = {})
     {
@@ -50,10 +50,10 @@ export class CjsGr2Reader
     }
 
     /**
-     * Set reader values for this reusable profile.
+     * Set format values for this reusable profile.
      *
      * @param {object} [options] Values to merge into the profile.
-     * @returns {CjsGr2Reader} This reader.
+     * @returns {CjsFormatGr2} This format profile.
      */
     SetValues(options = {})
     {
@@ -93,7 +93,7 @@ export class CjsGr2Reader
      * Set multiple GR2 JSON node constructors for this profile.
      *
      * @param {object} [classes] Map of node class keys to constructors.
-     * @returns {CjsGr2Reader} This reader.
+     * @returns {CjsFormatGr2} This format profile.
      */
     SetClasses(classes = {})
     {
@@ -105,7 +105,7 @@ export class CjsGr2Reader
      *
      * @param {string} type Node class key.
      * @param {Function|null|undefined} Class Constructor to use, or nullish to delete.
-     * @returns {CjsGr2Reader} This reader.
+     * @returns {CjsFormatGr2} This format profile.
      */
     SetClass(type, Class)
     {
@@ -180,9 +180,9 @@ export class CjsGr2Reader
     }
 
     /**
-     * Convert reader output to plain JSON-compatible data.
+     * Convert format output to plain JSON-compatible data.
      *
-     * @param {object} value Reader output to convert.
+     * @param {object} value Format output to convert.
      * @returns {any} Plain JSON-compatible data.
      */
     ToJSON(value)
@@ -199,7 +199,7 @@ export class CjsGr2Reader
      */
     static read(input, options = {})
     {
-        return readWithValues(CjsGr2Reader, input, normalizeValues(DEFAULT_VALUES, options));
+        return readWithValues(CjsFormatGr2, input, normalizeValues(DEFAULT_VALUES, options));
     }
 
     /**
@@ -227,7 +227,7 @@ export class CjsGr2Reader
     /**
      * Static JSON-compatible conversion.
      *
-     * @param {object} value Reader output to convert.
+     * @param {object} value Format output to convert.
      * @returns {any} Plain JSON-compatible data.
      */
     static toJSON(value)
@@ -243,4 +243,4 @@ export class CjsGr2Reader
 
 }
 
-export default CjsGr2Reader;
+export default CjsFormatGr2;

@@ -1,1 +1,1 @@
-export { CjsGr2Reader, default } from "./CjsGr2Reader.js";
+export { CjsFormatGr2, default } from "./CjsFormatGr2.js";

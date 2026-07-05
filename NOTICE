@@ -1,4 +1,4 @@
-carbonenginejs/reader-gr2
+carbonenginejs/format-gr2
 =========================
 
 A pure-JavaScript reader for RAD Game Tools' Granny 3D (.gr2) file format.

@@ -1,14 +1,14 @@
 {
-  "name": "@carbonenginejs/reader-gr2",
+  "name": "@carbonenginejs/format-gr2",
   "version": "0.1.0",
-  "description": "CarbonEngineJS GR2 reader. Decodes RAD Granny .gr2 sections, walks the Granny type tree, and emits GR2 JSON or caller-supplied classes.",
+  "description": "CarbonEngineJS GR2 format package. Decodes RAD Granny .gr2 sections, walks the Granny type tree, and emits GR2 JSON or caller-supplied classes.",
   "type": "module",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js"
   },
   "bin": {
-    "reader-gr2": "bin/gr2reader.js",
+    "format-gr2": "bin/gr2reader.js",
     "gr2reader": "bin/gr2reader.js"
   },
   "engines": {
@@ -21,7 +21,7 @@
   },
   "keywords": [
     "carbonenginejs",
-    "reader-gr2",
+    "format-gr2",
     "gr2",
     "granny",
     "granny3d",
