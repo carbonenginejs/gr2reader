@@ -35,6 +35,10 @@ export const OUTPUT_RAW = "raw";
  * curves in place, adding plain knots, controls, and dimension fields.
  * @property {boolean} [unpackTangents=false] Decode CCP packed tangent frames
  * into separate normal, tangent, and binormal vertex channels.
+ * @property {import("./gr2json.js").Gr2NodeClasses} [classes] Opt-in node
+ * class map. When given, matching gr2_json node types (mesh, model, bone,
+ * skeleton, animation, etc.) are instantiated and populated as class
+ * instances instead of plain object literals. Ignored when emit is "raw".
  */
 
 /**
@@ -67,7 +71,7 @@ export const OUTPUT_RAW = "raw";
  */
 export function readGr2(buffer, options = {})
 {
-    const { emit = OUTPUT_GR2_JSON, decompressCurves = false, unpackTangents = false } = options;
+    const { emit = OUTPUT_GR2_JSON, decompressCurves = false, unpackTangents = false, classes } = options;
 
     const parsed = readGr2Raw(buffer);
     if (emit === OUTPUT_RAW) return parsed;
@@ -77,7 +81,7 @@ export function readGr2(buffer, options = {})
         throw new Error(`gr2reader: unknown emit option "${emit}"`);
     }
 
-    const json = emitGr2Json(parsed.fileInfo, parsed.version);
+    const json = emitGr2Json(parsed.fileInfo, parsed.version, { classes });
 
     if (decompressCurves)
     {

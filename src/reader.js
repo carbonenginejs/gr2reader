@@ -356,6 +356,107 @@ export function readGr2Raw(buf)
         }
     }
 
+    const layoutCache = new Map();
+
+    /**
+     * Compute and cache the fixed per-member byte layout of a reflected type.
+     *
+     * Granny types are static structural definitions, so every instance of a
+     * given type has an identical member layout; this only needs to run once
+     * per type instead of once per object instance (as recomputing offsets
+     * with {@link memberSize} inside {@link readObject} would).
+     *
+     * @param {number} typeOff Global type-definition offset.
+     * @returns {{members: object[], offsets: number[]}} Cached member list and
+     * each member's byte offset relative to the start of the object.
+     */
+    function typeLayout(typeOff)
+    {
+        if (layoutCache.has(typeOff)) return layoutCache.get(typeOff);
+
+        const
+            members = readType(typeOff),
+            offsets = new Array(members.length);
+        let size = 0;
+        for (let i = 0; i < members.length; i++)
+        {
+            offsets[i] = size;
+            size += memberSize(members[i]);
+        }
+
+        const layout = { members, offsets };
+        layoutCache.set(typeOff, layout);
+        return layout;
+    }
+
+    /**
+     * Byte stride between consecutive elements of a fixed-width numeric member type.
+     *
+     * @param {number} type Granny member type id.
+     * @returns {number} Element stride in bytes.
+     */
+    function numericStride(type)
+    {
+        switch (type)
+        {
+            case M.Real32:
+            case M.Int32:
+            case M.UInt32:
+                return 4;
+
+            case M.Int16:
+            case M.UInt16:
+            case M.BinormalInt16:
+            case M.NormalUInt16:
+            case M.Real16:
+                return 2;
+
+            default: // Int8, UInt8, BinormalInt8, NormalUInt8
+                return 1;
+        }
+    }
+
+    /**
+     * Read one fixed-width numeric value from relocated memory.
+     *
+     * @param {number} type Granny member type id.
+     * @param {number} o Global byte offset of the value.
+     * @returns {number} Decoded value.
+     */
+    function numericAt(type, o)
+    {
+        switch (type)
+        {
+            case M.Real32:
+                return f32(o);
+
+            case M.Int32:
+                return i32(o);
+
+            case M.UInt32:
+                return u32(o);
+
+            case M.Int16:
+            case M.BinormalInt16:
+                return dv.getInt16(o, true);
+
+            case M.UInt16:
+            case M.NormalUInt16:
+                return dv.getUint16(o, true);
+
+            case M.Real16:
+                return half2float(dv.getUint16(o, true));
+
+            case M.Int8:
+            case M.BinormalInt8:
+                return dv.getInt8(o);
+
+            case M.UInt8:
+            case M.NormalUInt8:
+                return mem[o];
+        }
+    }
+
     /**
      * Read a scalar or fixed-width numeric member from relocated memory.
      *
@@ -365,55 +466,17 @@ export function readGr2Raw(buf)
      */
     function numeric(m, off)
     {
-        const
-            w = m.arrayWidth > 0 ? m.arrayWidth : 1,
-            out = [];
+        const w = m.arrayWidth > 0 ? m.arrayWidth : 1;
+        if (w === 1) return numericAt(m.type, off);
 
+        const
+            stride = numericStride(m.type),
+            out = new Array(w);
         for (let i = 0; i < w; i++)
         {
-            let v, o = off;
-            switch (m.type)
-            {
-                case M.Real32:
-                    v = f32(o + i * 4);
-                    break;
-
-                case M.Int32:
-                    v = i32(o + i * 4);
-                    break;
-
-                case M.UInt32:
-                    v = u32(o + i * 4);
-                    break;
-
-                case M.Int16:
-                case M.BinormalInt16:
-                    v = dv.getInt16(o + i * 2, true);
-                    break;
-
-                case M.UInt16:
-                case M.NormalUInt16:
-                    v = dv.getUint16(o + i * 2, true);
-                    break;
-
-                case M.Real16:
-                    v = half2float(dv.getUint16(o + i * 2, true));
-                    break;
-
-                case M.Int8:
-                case M.BinormalInt8:
-                    v = dv.getInt8(o + i);
-                    break;
-
-                case M.UInt8:
-                case M.NormalUInt8:
-                    v = mem[o + i];
-                    break;
-            }
-            out.push(v);
+            out[i] = numericAt(m.type, off + i * stride);
         }
-
-        return m.arrayWidth > 1 ? out : out[0];
+        return out;
     }
 
     /**
@@ -434,7 +497,7 @@ export function readGr2Raw(buf)
     }
 
     let depth = 0;
-    const objCache = new Map();
+    const objCache = new Map(); // typeOff -> Map<objOff, object>
 
     /**
      * Read a reflected object graph node, preserving pointer identity and cycles.
@@ -446,27 +509,37 @@ export function readGr2Raw(buf)
     function readObject(typeOff, objOff)
     {
         if (typeOff < 0 || objOff < 0) return null;
-        const key = typeOff + ":" + objOff;
-        if (objCache.has(key)) return objCache.get(key);
+
+        let byOff = objCache.get(typeOff);
+        if (byOff === undefined)
+        {
+            byOff = new Map();
+            objCache.set(typeOff, byOff);
+        }
+        else
+        {
+            const cached = byOff.get(objOff);
+            if (cached !== undefined) return cached;
+        }
+
         if (++depth > 200) { depth--; throw new Error("recursion too deep"); }
 
         const obj = {};
-        objCache.set(key, obj);
-        let off = objOff;
-        for (const m of readType(typeOff))
+        byOff.set(objOff, obj);
+        const { members, offsets } = typeLayout(typeOff);
+        for (let idx = 0; idx < members.length; idx++)
         {
-            const field = off;
-            off += memberSize(m);
+            const
+                m = members[idx],
+                field = objOff + offsets[idx];
             let name = m.name || "_";
 
-            /**
-             * Test whether the current output object already owns a field name.
-             *
-             * @param {string} k Candidate field name.
-             * @returns {boolean} Whether the object already has that own key.
-             */
-            const has = k => Object.prototype.hasOwnProperty.call(obj, k);
-            if (has(name)) { let n = 2; while (has(name + " " + n)) n++; name = name + " " + n; }
+            if (Object.prototype.hasOwnProperty.call(obj, name))
+            {
+                let n = 2;
+                while (Object.prototype.hasOwnProperty.call(obj, name + " " + n)) n++;
+                name = name + " " + n;
+            }
             switch (m.type)
             {
                 case M.String:

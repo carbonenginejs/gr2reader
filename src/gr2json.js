@@ -45,6 +45,42 @@ const
  */
 
 /**
+ * Node keys accepted by {@link emitGr2Json}'s `options.classes` map.
+ *
+ * Each key names one gr2_json node shape; the mapped constructor is
+ * instantiated with `new` and populated with that node's usual fields instead
+ * of a plain object literal.
+ */
+export const GR2JSON_CLASS_KEYS = Object.freeze([
+    "Root", "Mesh", "BoneBinding", "IndexGroup", "MorphTarget", "Model",
+    "Skeleton", "Bone", "Animation", "TrackGroup", "TransformTrack", "Curve"
+]);
+
+/**
+ * Constructors used to hydrate gr2_json nodes as class instances.
+ *
+ * Every key is optional; node types with no matching constructor keep the
+ * default plain-object shape. See {@link GR2JSON_CLASS_KEYS} for valid keys.
+ *
+ * @typedef {{[key: string]: new () => object}} Gr2NodeClasses
+ */
+
+/**
+ * Instantiate and populate a node class, or return the plain props unchanged.
+ *
+ * @param {Gr2NodeClasses} classes Opt-in node class map.
+ * @param {string} key Node key to look up in `classes`.
+ * @param {object} props Fields to populate onto the instance.
+ * @returns {object} A populated class instance, or `props` when no
+ * constructor is registered for `key`.
+ */
+function build(classes, key, props)
+{
+    const Ctor = classes[key];
+    return Ctor ? Object.assign(new Ctor(), props) : props;
+}
+
+/**
  * Root object emitted in the legacy `gr2_json` shape.
  *
  * @typedef {object} Gr2JsonRoot
@@ -189,12 +225,13 @@ function uarr(a) { return scalarArray(a).map(x => x >>> 0); }
  * Emit one Granny Curve2 object in legacy gr2_json form.
  *
  * @param {object} curve2 Reflected Granny curve object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Compact curve record with format-specific fields.
  */
-function emitCurve(curve2)
+function emitCurve(curve2, classes = {})
 {
     const cd = curve2 && curve2.CurveData;
-    if (!cd) return { format: 0, degree: 0, error: "no curve data" };
+    if (!cd) return build(classes, "Curve", { format: 0, degree: 0, error: "no curve data" });
     const
         h = curveHeader(cd) || { Format: 0, Degree: 0 },
         format = h.Format,
@@ -270,7 +307,7 @@ function emitCurve(curve2)
         default:
             o.error = `Unknown format ${format}`;
     }
-    return o;
+    return build(classes, "Curve", o);
 }
 
 /**
@@ -312,20 +349,52 @@ function addExtendedData(target, ext)
 }
 
 /**
+ * Emit one reflected Granny morph target (blend shape) in gr2_json shape.
+ *
+ * Morph target vertex data uses the same deinterleaved channel layout as a
+ * mesh's primary vertex data.
+ *
+ * @param {object} mt Reflected Granny `granny_morph_target` object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
+ * @returns {object} Emitted morph-target record.
+ */
+function emitMorphTarget(mt, classes = {})
+{
+    const
+        vd = mt.VertexData,
+        verts = (vd && vd.Vertices) || [];
+    return build(classes, "MorphTarget", {
+        name: mt.ScalarName ?? "",
+        dataIsDeltas: !!mt.DataIsDeltas,
+        vertex: {
+            position: copyChannel(verts, "Position", 3),
+            blendIndice: copyChannel(verts, "BoneIndices", 4),
+            tangent: copyChannel(verts, "Tangent", 4),
+            normal: copyChannel(verts, "Normal", 3),
+            texcoord0: copyChannel(verts, "TextureCoordinates0", 2),
+            texcoord1: copyChannel(verts, "TextureCoordinates1", 2),
+            binormal: copyChannel(verts, "Binormal", 4),
+            blendWeight: copyChannel(verts, "BoneWeights", 4)
+        }
+    });
+}
+
+/**
  * Emit a reflected Granny mesh in legacy gr2_json shape.
  *
  * @param {object} mesh Reflected Granny mesh object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted mesh record.
  */
-function emitMesh(mesh)
+function emitMesh(mesh, classes = {})
 {
     const o = {};
     o.name = mesh.Name ?? "";
-    o.morphTargets = [];
+    o.morphTargets = (mesh.MorphTargets || []).map(mt => emitMorphTarget(mt, classes));
     o.minBounds = [ 0, 0, 0 ];
     o.maxBounds = [ 0, 0, 0 ];
 
-    o.boneBindings = (mesh.BoneBindings || []).map(bb => ({
+    o.boneBindings = (mesh.BoneBindings || []).map(bb => build(classes, "BoneBinding", {
         name: bb.BoneName ?? "",
         minBounds: (bb.OBBMin || [ 0, 0, 0 ]).map(x => sf(fr(x))),
         maxBounds: (bb.OBBMax || [ 0, 0, 0 ]).map(x => sf(fr(x)))
@@ -365,23 +434,24 @@ function emitMesh(mesh)
             {
                 faces[i] = indices[start + i] >>> 0;
             }
-            o.indices.push({
+            o.indices.push(build(classes, "IndexGroup", {
                 name: `area_${g.MaterialIndex}`,
                 bytesPerIndex: bpi,
                 faces
-            });
+            }));
         }
     }
-    return o;
+    return build(classes, "Mesh", o);
 }
 
 /**
  * Emit a reflected Granny skeleton bone in legacy gr2_json shape.
  *
  * @param {object} bone Reflected Granny bone object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted bone record.
  */
-function emitBone(bone)
+function emitBone(bone, classes = {})
 {
     const
         t = bone.LocalTransform || bone.Transform ||
@@ -394,22 +464,23 @@ function emitBone(bone)
     if (t.flags & 2) o.orientation = t.orientation.map(x => sf(fr(x)));
     if (t.flags & 4) o.scaleShear = t.scaleShear.map(x => sf(fr(x)));
     addExtendedData(o, bone.ExtendedData);
-    return o;
+    return build(classes, "Bone", o);
 }
 
 /**
  * Emit a reflected Granny skeleton in legacy gr2_json shape.
  *
  * @param {object|null} skel Reflected Granny skeleton object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted skeleton record.
  */
-function emitSkeleton(skel)
+function emitSkeleton(skel, classes = {})
 {
     const o = {};
     o.name = skel ? (skel.Name ?? "") : "";
-    o.bones = skel ? (skel.Bones || []).map(emitBone) : [];
+    o.bones = skel ? (skel.Bones || []).map(b => emitBone(b, classes)) : [];
     if (skel) addExtendedData(o, skel.ExtendedData);
-    return o;
+    return build(classes, "Skeleton", o);
 }
 
 /**
@@ -417,13 +488,14 @@ function emitSkeleton(skel)
  *
  * @param {object} model Reflected Granny model object.
  * @param {object} fileInfo Root reflected Granny file-info object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted model record.
  */
-function emitModel(model, fileInfo)
+function emitModel(model, fileInfo, classes = {})
 {
     const o = {};
     o.name = model.Name ?? "";
-    o.skeleton = emitSkeleton(model.Skeleton);
+    o.skeleton = emitSkeleton(model.Skeleton, classes);
     const meshes = fileInfo.Meshes || [];
     o.meshBindings = (model.MeshBindings || []).map(mb =>
     {
@@ -431,47 +503,50 @@ function emitModel(model, fileInfo)
         return idx;
     });
     addExtendedData(o, model.ExtendedData);
-    return o;
+    return build(classes, "Model", o);
 }
 
 /**
  * Emit a reflected Granny transform track in legacy gr2_json shape.
  *
  * @param {object} tt Reflected Granny transform-track object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted transform-track record.
  */
-function emitTransformTrack(tt)
+function emitTransformTrack(tt, classes = {})
 {
-    return {
+    return build(classes, "TransformTrack", {
         name: tt.Name ?? "",
         flags: tt.Flags | 0,
-        orientation: emitCurve(tt.OrientationCurve),
-        position: emitCurve(tt.PositionCurve),
-        scaleShear: emitCurve(tt.ScaleShearCurve)
-    };
+        orientation: emitCurve(tt.OrientationCurve, classes),
+        position: emitCurve(tt.PositionCurve, classes),
+        scaleShear: emitCurve(tt.ScaleShearCurve, classes)
+    });
 }
 
 /**
  * Emit a reflected Granny track group in legacy gr2_json shape.
  *
  * @param {object} tg Reflected Granny track-group object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted track-group record.
  */
-function emitTrackGroup(tg)
+function emitTrackGroup(tg, classes = {})
 {
-    return {
+    return build(classes, "TrackGroup", {
         name: tg.Name ?? "",
-        transformTracks: (tg.TransformTracks || []).map(emitTransformTrack)
-    };
+        transformTracks: (tg.TransformTracks || []).map(tt => emitTransformTrack(tt, classes))
+    });
 }
 
 /**
  * Emit a reflected Granny animation in legacy gr2_json shape.
  *
  * @param {object} anim Reflected Granny animation object.
+ * @param {Gr2NodeClasses} [classes] Opt-in node class map.
  * @returns {object} Emitted animation record.
  */
-function emitAnimation(anim)
+function emitAnimation(anim, classes = {})
 {
     const o = {};
     o.name = anim.Name ?? "";
@@ -480,9 +555,9 @@ function emitAnimation(anim)
     o.oversampling = sf(fr(anim.Oversampling));
     o.defaultLoopCount = anim.DefaultLoopCount | 0;
     o.flags = anim.Flags | 0;
-    o.trackGroups = (anim.TrackGroups || []).filter(t => t).map(emitTrackGroup);
+    o.trackGroups = (anim.TrackGroups || []).filter(t => t).map(tg => emitTrackGroup(tg, classes));
     addExtendedData(o, anim.ExtendedData);
-    return o;
+    return build(classes, "Animation", o);
 }
 
 /**
@@ -491,19 +566,28 @@ function emitAnimation(anim)
  * The key order and numeric conversion rules intentionally match the native
  * `evegr2tojson` output so downstream tools can compare serialized output.
  *
+ * When `options.classes` is given, matching node types are instantiated and
+ * populated as class instances instead of plain object literals — an opt-in
+ * alternative to walking the returned JSON into application-specific classes
+ * by hand. See {@link GR2JSON_CLASS_KEYS} for the recognized keys.
+ *
  * @param {object} fileInfo Reflected `granny_file_info` object from `reader.js`.
  * @param {number} version Granny file format revision.
- * @returns {Gr2JsonRoot} Plain JSON-compatible `gr2_json` object.
+ * @param {object} [options] Emission options.
+ * @param {Gr2NodeClasses} [options.classes] Opt-in node class map.
+ * @returns {Gr2JsonRoot} Plain JSON-compatible `gr2_json` object, or a
+ * populated `classes.Root` instance when provided.
  */
-export function emitGr2Json(fileInfo, version)
+export function emitGr2Json(fileInfo, version, options = {})
 {
-    return {
+    const { classes = {} } = options;
+    return build(classes, "Root", {
         grannyFileFormatRevision: version | 0,
         grannyFileSource: fileInfo.FromFileName ?? "",
-        meshes: (fileInfo.Meshes || []).filter(m => m).map(emitMesh),
-        models: (fileInfo.Models || []).filter(m => m).map(m => emitModel(m, fileInfo)),
-        animations: (fileInfo.Animations || []).filter(a => a).map(emitAnimation)
-    };
+        meshes: (fileInfo.Meshes || []).filter(m => m).map(m => emitMesh(m, classes)),
+        models: (fileInfo.Models || []).filter(m => m).map(m => emitModel(m, fileInfo, classes)),
+        animations: (fileInfo.Animations || []).filter(a => a).map(a => emitAnimation(a, classes))
+    });
 }
 
 /**
@@ -650,6 +734,7 @@ export function stringifyGr2Json(node)
 export const gr2json = Object.freeze({
     MEMBER_TYPES: GR2JSON_MEMBER_TYPES,
     CURVE_FORMATS: GR2JSON_CURVE_FORMATS,
+    CLASS_KEYS: GR2JSON_CLASS_KEYS,
     INV255: GR2JSON_INV255,
     INV65535: GR2JSON_INV65535,
     INV127: GR2JSON_INV127,

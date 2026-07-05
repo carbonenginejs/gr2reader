@@ -19,8 +19,10 @@ replacement for that native pipeline.
 | Codec: BitKnit2 | ✅ validated 40/40 vs granny2.dll oracle |
 | Generic type-tree reflection → object graph | ✅ |
 | `gr2_json` emitter (vertices, indices, curves) | ⏳ assembling |
+| Morph targets / blend shapes | ✅ decoded from source `.gr2` when present (legacy `evegr2tojson` always emitted `[]`) |
 | Optional curve decompression (`decompressCurves`) | ✅ all 19 granny formats; validated vs ccpwgl reference decoders (max diff 0) |
 | Optional tangent unpacking (`unpackTangents`) | done: packed CCP tangent frames |
+| Optional node class hydration (`classes`) | done: instantiate caller-supplied classes instead of plain objects |
 
 > BitKnit2 files store their pointer-fixup tables **BitKnit2-compressed** (not raw like
 > None/Oodle1 files); the relocation layer handles both framings.
@@ -35,6 +37,7 @@ const result = readGr2(readFileSync("model.gr2"), {
   emit: "gr2_json",         // "gr2_json" (default) | "raw" (the granny_file_info graph)
   decompressCurves: false,  // opt-in: resolve compressed granny curves → knots/controls
   unpackTangents: false,   // opt-in: unpack packed tangent frames
+  classes: undefined,      // opt-in: instantiate caller-supplied classes instead of plain objects
 });
 ```
 
@@ -73,11 +76,28 @@ gr2reader model.gr2            # writes model.gr2_json next to the input
 - **`unpackTangents`** - default `false`. Optional unpacking of packed tangent
   frames into normal, tangent, and binormal channels. Tangent helpers are available as
   named exports and through `tangents.unpack`, `tangents.pack`, and `tangents.decode`.
+- **`classes`** — default none (plain objects, the `gr2_json` shape). An opt-in map from
+  node key to a constructor; when a key is present, that node is built as
+  `Object.assign(new Ctor(), fields)` instead of a plain object literal, so consumers
+  (e.g. an engine's own geometry classes) can be populated directly without an
+  intermediate JSON walk. Any keys you omit keep the default plain-object shape.
+  Recognized keys (`GR2JSON_CLASS_KEYS`): `Root`, `Mesh`, `BoneBinding`, `IndexGroup`,
+  `MorphTarget`, `Model`, `Skeleton`, `Bone`, `Animation`, `TrackGroup`, `TransformTrack`,
+  `Curve`.
 
-## Roadmap
+  ```js
+  import { readGr2 } from "gr2reader";
 
-- Integrate more directly with CCPWGL / CarbonEngine classes so consumers can opt into
-  engine-native objects instead of always using `gr2_json` as an intermediate representation.
+  class MyMesh { /* ... */ }
+  class MyBone { /* ... */ }
+
+  const result = readGr2(readFileSync("model.gr2"), {
+    classes: { Mesh: MyMesh, Bone: MyBone }, // only Mesh/Bone nodes are hydrated
+  });
+
+  result.meshes[0] instanceof MyMesh; // true
+  result.models[0].constructor;       // Object — Model wasn't given a class
+  ```
 
 ## License / attribution
 

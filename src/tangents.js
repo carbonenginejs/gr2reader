@@ -104,6 +104,56 @@ export function isNullTangent(u)
 }
 
 /**
+ * Reusable scratch vectors for {@link decodeTangentFrameInto}, shared by
+ * {@link decodeTangentFrame} and the {@link unpackMeshTangents} hot loop.
+ *
+ * Safe to share: every caller fully consumes or copies these before
+ * returning, and JS's single-threaded, non-reentrant execution means no two
+ * decodes are ever in flight at once.
+ */
+const
+    scratchT = new Float64Array(3),
+    scratchB = new Float64Array(3),
+    scratchN = new Float64Array(3);
+
+/**
+ * Core packed-tangent-frame decode, writing results into caller-supplied
+ * vectors instead of allocating, so per-vertex hot loops can reuse one set of
+ * scratch buffers across the whole mesh.
+ *
+ * @param {number} u0 Tangent azimuth angle, UNorm-encoded.
+ * @param {number} u1 Tangent elevation angle, UNorm-encoded.
+ * @param {number} u2 Binormal azimuth angle, UNorm-encoded.
+ * @param {number} u3 Binormal elevation angle, UNorm-encoded.
+ * @param {Float64Array} outT Receives the unit tangent vector.
+ * @param {Float64Array} outB Receives the unit binormal vector.
+ * @param {Float64Array} outN Receives the derived normal vector.
+ * @returns {boolean} Whether the packed input was the null-frame sentinel.
+ */
+function decodeTangentFrameInto(u0, u1, u2, u3, outT, outB, outN)
+{
+    const
+        a0 = u0*TAU - PI,
+        a1 = u1*TAU - PI,
+        a2 = u2*TAU - PI,
+        a3 = u3*TAU - PI;
+
+    const
+        s1 = Math.abs(Math.sin(a1)),
+        s3 = Math.abs(Math.sin(a3));
+
+    outT[0] = s1*Math.cos(a0); outT[1] = s1*Math.sin(a0); outT[2] = Math.cos(a1);
+    outB[0] = s3*Math.cos(a2); outB[1] = s3*Math.sin(a2); outB[2] = Math.cos(a3);
+
+    const sign = (a1 > 0 && a3 > 0) ? 1 : -1;
+    outN[0] = (outT[1]*outB[2] - outT[2]*outB[1]) * sign;
+    outN[1] = (outT[2]*outB[0] - outT[0]*outB[2]) * sign;
+    outN[2] = (outT[0]*outB[1] - outT[1]*outB[0]) * sign;
+
+    return s1 < 1e-6 && s3 < 1e-6;
+}
+
+/**
  * Decode a packed tangent frame.
  *
  * The first and third channels are azimuth angles. The second and fourth
@@ -115,25 +165,8 @@ export function isNullTangent(u)
  */
 export function decodeTangentFrame(u)
 {
-    const
-        a0 = u[0]*TAU - PI,
-        a1 = u[1]*TAU - PI,
-        a2 = u[2]*TAU - PI,
-        a3 = u[3]*TAU - PI;
-
-    const
-        s1 = Math.abs(Math.sin(a1)),
-        s3 = Math.abs(Math.sin(a3));
-
-    const
-        T = [ s1*Math.cos(a0), s1*Math.sin(a0), Math.cos(a1) ],
-        B = [ s3*Math.cos(a2), s3*Math.sin(a2), Math.cos(a3) ];
-
-    const
-        sign = (a1 > 0 && a3 > 0) ? 1 : -1,
-        N = cross(T, B).map(v => v * sign);
-
-    return { T, B, N, null: (s1 < 1e-6 && s3 < 1e-6) };
+    const isNull = decodeTangentFrameInto(u[0], u[1], u[2], u[3], scratchT, scratchB, scratchN);
+    return { T: Array.from(scratchT), B: Array.from(scratchB), N: Array.from(scratchN), null: isNull };
 }
 
 /**
@@ -236,9 +269,9 @@ export function unpackMeshTangents(mesh)
     for (let i = 0; i < n; i++)
     {
         const
-            u = [ src[i*4], src[i*4+1], src[i*4+2], src[i*4+3] ],
-            { T, B, N, null: isNull } = decodeTangentFrame(u),
-            o = i * 3;
+            s = i * 4,
+            o = i * 3,
+            isNull = decodeTangentFrameInto(src[s], src[s+1], src[s+2], src[s+3], scratchT, scratchB, scratchN);
 
         if (isNull)
         {
@@ -248,17 +281,17 @@ export function unpackMeshTangents(mesh)
         }
         else
         {
-            normal[o]=N[0];
-            normal[o+1]=N[1];
-            normal[o+2]=N[2];
+            normal[o]=scratchN[0];
+            normal[o+1]=scratchN[1];
+            normal[o+2]=scratchN[2];
 
-            tangent[o]=T[0];
-            tangent[o+1]=T[1];
-            tangent[o+2]=T[2];
+            tangent[o]=scratchT[0];
+            tangent[o+1]=scratchT[1];
+            tangent[o+2]=scratchT[2];
 
-            binormal[o]=B[0];
-            binormal[o+1]=B[1];
-            binormal[o+2]=B[2];
+            binormal[o]=scratchB[0];
+            binormal[o+1]=scratchB[1];
+            binormal[o+2]=scratchB[2];
         }
     }
     v.normal = normal; v.tangent = tangent; v.binormal = binormal;

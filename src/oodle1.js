@@ -105,6 +105,19 @@ class WeighWindow
         this.ranges = [ 0, 0x4000 ];
         this.weights = [ 4 ];
         this.values = [ 0 ];
+
+        /**
+         * Reusable result carrier for {@link WeighWindow#tryDecode}, owned by
+         * this instance so repeated decode calls don't allocate a fresh object
+         * per symbol (the hottest allocation site in this decoder). Safe to
+         * reuse across calls: each result is fully consumed (read, and any
+         * `storeValue` follow-up applied) before this same instance's next
+         * `tryDecode` call, and every `decompressBlock` call site that needs
+         * more than one decoded value at once (`d3`/`d4`/`d5`) always reads
+         * from three distinct `WeighWindow` instances, never this one twice.
+         */
+        this.result = { newIndex: -1, value: 0 };
+
         this.threshIncrease = 4;
         this.threshRangeRebuild = 8;
         this.threshWeightRebuild = Math.max(256, Math.min(32 * maxValue, 15160));
@@ -224,14 +237,23 @@ class WeighWindow
         this.weights[index]++;
         this.weightTotal++;
 
-        if (index > 0) return { newIndex: -1, value: this.values[index] };
+        const result = this.result;
+
+        if (index > 0)
+        {
+            result.newIndex = -1;
+            result.value = this.values[index];
+            return result;
+        }
 
         if (this.weights.length >= this.ranges.length && dec.decodeCommit(2) === 1)
         {
             const i = this.ranges.length + dec.decodeCommit(this.weights.length - this.ranges.length + 1) - 1;
             this.weights[i] += 2;
             this.weightTotal += 2;
-            return { newIndex: -1, value: this.values[i] };
+            result.newIndex = -1;
+            result.value = this.values[i];
+            return result;
         }
 
         this.values.push(0);
@@ -244,7 +266,9 @@ class WeighWindow
             this.weights[0] = 0;
         }
 
-        return { newIndex: this.values.length - 1, value: 0 };
+        result.newIndex = this.values.length - 1;
+        result.value = 0;
+        return result;
     }
 
     /**
