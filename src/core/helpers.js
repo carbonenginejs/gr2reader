@@ -179,9 +179,27 @@ function isRawGr2Result(value)
         typeof value.version === "number";
 }
 
+/**
+ * Normalizes GR2 input into a Uint8Array. readGr2Raw indexes `.buffer`,
+ * `.byteOffset`, `.byteLength` and calls `.subarray()`, so a raw
+ * ArrayBuffer (e.g. from `fetch(...).then(r => r.arrayBuffer())`, which
+ * is how ccpwgl's resource loader supplies bytes) must be wrapped in a
+ * view before it reaches readGr2Raw, not passed straight through.
+ *
+ * @param {Uint8Array|ArrayBuffer|Buffer|DataView} input GR2 bytes.
+ * @returns {Uint8Array} A Uint8Array view over the same bytes.
+ */
+function toBytes(input)
+{
+    if (input instanceof Uint8Array) return input;
+    if (typeof ArrayBuffer !== "undefined" && input instanceof ArrayBuffer) return new Uint8Array(input);
+    if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    throw new TypeError("CjsFormatGr2: input must be GR2 bytes (Uint8Array, Buffer, DataView or ArrayBuffer)");
+}
+
 export function readRawInput(input)
 {
-    return isRawGr2Result(input) ? input : readGr2Raw(input);
+    return isRawGr2Result(input) ? input : readGr2Raw(toBytes(input));
 }
 
 function meshName(mesh, meshIndex)
