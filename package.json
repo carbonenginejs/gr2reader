@@ -36,10 +36,12 @@
   "files": [
     "src",
     "bin",
+    "LICENSE",
     "NOTICE",
+    "THIRD-PARTY-NOTICES.md",
     "README.md"
   ],
-  "license": "SEE LICENSE IN NOTICE",
+  "license": "EUPL-1.2",
   "devDependencies": {
     "eslint": "^8.57.1"
   }

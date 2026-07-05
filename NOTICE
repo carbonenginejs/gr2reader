@@ -9,6 +9,11 @@ CarbonEngineJS-facing code is copyright cppctamber / CarbonEngineJS
 contributors. CarbonEngine source material, formats, class names, and schema
 semantics remain copyright their original CarbonEngine authors.
 
+Current repository license: EUPL-1.2. See LICENSE.
+
+Future target: MIT, once the EUPL-derived BitKnit implementation is replaced or
+removed and the remaining code and dependencies permit MIT distribution.
+
 Provenance and legal requirements
 ---------------------------------
 
@@ -42,4 +47,5 @@ Container / relocation / type-tree reflection (src/container.js, src/reader.js)
   Original to this project, derived from the on-disk Granny GRN format layout
   (cross-referenced with the Granny SDK headers and the above projects' docs).
 
-Please retain this NOTICE and the upstream licenses when redistributing.
+Please retain this NOTICE, LICENSE, THIRD-PARTY-NOTICES.md, and the upstream
+licenses when redistributing.

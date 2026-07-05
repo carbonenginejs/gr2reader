@@ -184,5 +184,12 @@ const unpacked = CjsGr2Reader.tangents.unpack(mesh);
 
 ## License / Attribution
 
-Original code plus ported decompressors from open reverse-engineering projects.
-See `NOTICE` for full provenance. Contains no RAD/Granny proprietary code.
+Current license: `EUPL-1.2`.
+
+`reader-gr2` is currently EUPL-1.2 because `src/core/bitknit2.js` derives from
+EUPL-1.2 prior work. The intended future target is MIT once that implementation
+is replaced, removed, or re-derived from permissively licensed sources. See
+`LICENSE`, `NOTICE`, and `THIRD-PARTY-NOTICES.md` for provenance and current
+redistribution requirements.
+
+Contains no RAD/Granny proprietary code and does not link `granny2.dll`.
