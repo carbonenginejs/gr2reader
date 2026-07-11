@@ -1,9 +1,18 @@
 import { readGr2Raw } from "./reader.js";
-import { emitJson, CLASS_KEYS } from "./json.js";
+import { emitJson, CLASS_KEYS as GR2_CLASS_KEYS } from "./json.js";
 import { tangents } from "./tangents.js";
 import { decompressAnimationCurves } from "./curves.js";
+import { buildCmfFromShared, CMF_CLASS_KEYS, hydrateCmf } from "./targets.js";
+
+export const CLASS_KEYS = Object.freeze(Array.from(new Set([
+    ...GR2_CLASS_KEYS,
+    ...CMF_CLASS_KEYS
+])));
 
 export const OUTPUT_JSON = "json";
+export const OUTPUT_GR2 = "gr2";
+export const OUTPUT_GR2_JSON = "gr2Json";
+export const OUTPUT_CMF = "cmf";
 export const OUTPUT_RAW = "raw";
 
 export const DEFAULT_VALUES = Object.freeze({
@@ -29,6 +38,9 @@ const OPTION_KEYS = new Set([
 function normalizeEmit(emit)
 {
     if (emit === undefined || emit === OUTPUT_JSON) return OUTPUT_JSON;
+    if (emit === OUTPUT_GR2_JSON) return OUTPUT_GR2_JSON;
+    if (emit === OUTPUT_GR2) return OUTPUT_GR2;
+    if (emit === OUTPUT_CMF) return OUTPUT_CMF;
     if (emit === OUTPUT_RAW) return OUTPUT_RAW;
     throw new Error(`CjsFormatGr2 unknown emit value "${emit}"`);
 }
@@ -170,7 +182,17 @@ export function normalizeValues(base = DEFAULT_VALUES, options = {})
         mergeClasses(values, options.classes);
     }
 
+    if ((values.emit === OUTPUT_GR2 || values.emit === OUTPUT_CMF) && !hasClasses(values.classes))
+    {
+        throw new TypeError(`CjsFormatGr2 emit "${values.emit}" requires explicit classes`);
+    }
+
     return values;
+}
+
+function hasClasses(classes)
+{
+    return !!classes && Object.values(classes).some((Class) => typeof Class === "function");
 }
 
 function isRawGr2Result(value)
@@ -345,7 +367,11 @@ function processMeshData(reader, json, raw, values)
 
 function buildJson(reader, raw, values)
 {
-    const json = emitJson(raw.fileInfo, raw.version, { classes: values.classes });
+    const json = emitJson(raw.fileInfo, raw.version, {
+        classes: values.emit === OUTPUT_GR2 || ((values.emit === OUTPUT_JSON || values.emit === OUTPUT_GR2_JSON) && hasClasses(values.classes))
+            ? values.classes
+            : {}
+    });
 
     if (values.decompressCurves)
     {
@@ -361,7 +387,10 @@ export function readWithValues(reader, input, values)
 {
     const parsed = readRawInput(input);
     if (values.emit === OUTPUT_RAW) return parsed;
-    return buildJson(reader, parsed, values);
+    const json = buildJson(reader, parsed, values);
+    return values.emit === OUTPUT_CMF
+        ? hydrateCmf(buildCmfFromShared(json), values.classes, { source: values.source })
+        : json;
 }
 
 export function toJsonValue(value, seen = new WeakSet())

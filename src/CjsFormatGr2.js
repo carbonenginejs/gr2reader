@@ -5,11 +5,15 @@
  * helper glue live in core/helpers.js.
  */
 
-import { CLASS_KEYS } from "./core/json.js";
 import { curves } from "./core/curves.js";
 import { tangents } from "./core/tangents.js";
+import { inspectGsfRaw, isGsfRaw, projectGsf } from "./core/gsf.js";
 import {
+    CLASS_KEYS,
     DEFAULT_VALUES,
+    OUTPUT_CMF,
+    OUTPUT_GR2,
+    OUTPUT_GR2_JSON,
     OUTPUT_JSON,
     OUTPUT_RAW,
     inspectRawGr2Result,
@@ -179,6 +183,25 @@ export class CjsFormatGr2
         return inspectRawGr2Result(this.ReadRaw(input));
     }
 
+    /** Whether input is a Granny State document carried by the GR2 container. */
+    IsGSF(input)
+    {
+        return isGsfRaw(this.ReadRaw(input));
+    }
+
+    /** Read the GState semantic projection, or raw reflected data with `emit: "raw"`. */
+    ReadGSF(input, options = {})
+    {
+        const raw = this.ReadRaw(input);
+        return options.emit === "raw" ? raw : projectGsf(raw);
+    }
+
+    /** Inspect a GSF document and its referenced GR2 animations. */
+    InspectGSF(input)
+    {
+        return inspectGsfRaw(this.ReadRaw(input));
+    }
+
     /**
      * Convert format output to plain JSON-compatible data.
      *
@@ -224,6 +247,38 @@ export class CjsFormatGr2
         return inspectRawGr2Result(readRawInput(input));
     }
 
+    /** Whether input is a Granny State document carried by the GR2 container. */
+    static isGsf(input)
+    {
+        try
+        {
+            return isGsfRaw(readRawInput(input));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /** Read the GState semantic projection, or raw reflected data with `emit: "raw"`. */
+    static readGsf(input, options = {})
+    {
+        const raw = readRawInput(input);
+        return options.emit === "raw" ? raw : projectGsf(raw);
+    }
+
+    /** Async one-shot GSF read for standard format API compatibility. */
+    static readGsfAsync(input, options = {})
+    {
+        return Promise.resolve(this.readGsf(input, options));
+    }
+
+    /** Inspect a GSF document and its referenced GR2 animations. */
+    static inspectGsf(input)
+    {
+        return inspectGsfRaw(readRawInput(input));
+    }
+
     /**
      * Static JSON-compatible conversion.
      *
@@ -236,10 +291,19 @@ export class CjsFormatGr2
     }
 
     static OUTPUT_JSON = OUTPUT_JSON;
+    static OUTPUT_GR2 = OUTPUT_GR2;
+    static OUTPUT_GR2_JSON = OUTPUT_GR2_JSON;
+    static OUTPUT_CMF = OUTPUT_CMF;
     static OUTPUT_RAW = OUTPUT_RAW;
     static CLASS_KEYS = CLASS_KEYS;
+    static type = Object.freeze([ "geometry" ]);
+    static mediaTypes = Object.freeze([ "geometry" ]);
+    static inputTypes = Object.freeze([ "gr2", "gsf" ]);
+    static outputTypes = Object.freeze([ OUTPUT_GR2, OUTPUT_CMF ]);
+    static debugOutputTypes = Object.freeze([ OUTPUT_JSON, OUTPUT_GR2_JSON, OUTPUT_RAW ]);
     static curves = curves;
     static tangents = tangents;
+    static gsf = Object.freeze({ isRaw: isGsfRaw, project: projectGsf, inspectRaw: inspectGsfRaw });
 
 }
 

@@ -67,10 +67,20 @@ export const CLASS_KEYS = Object.freeze([
  * @returns {object} A populated class instance, or `props` when no
  * constructor is registered for `key`.
  */
-function build(classes, key, props)
+function build(classes, key, props, hydrationOptions = {})
 {
     const Ctor = classes[key];
-    return Ctor ? Object.assign(new Ctor(), props) : props;
+    return Ctor ? populate(new Ctor(), props, hydrationOptions) : props;
+}
+
+function populate(instance, props, hydrationOptions = {})
+{
+    if (!instance || typeof instance.SetValues !== "function")
+    {
+        throw new TypeError("CjsFormatGr2 class population requires classes to implement SetValues(values)");
+    }
+    instance.SetValues(props, { ...hydrationOptions, skipUpdate: true, skipEvents: true });
+    return instance;
 }
 
 /**
@@ -573,12 +583,12 @@ function emitAnimation(anim, classes = {})
  */
 export function emitJson(fileInfo, version, options = {})
 {
-    const { classes = {} } = options;
+    const { classes = {}, ...hydrationOptions } = options;
     return build(classes, "Root", {
         grannyFileFormatRevision: version | 0,
         grannyFileSource: fileInfo.FromFileName ?? "",
         meshes: (fileInfo.Meshes || []).filter(m => m).map(m => emitMesh(m, classes)),
         models: (fileInfo.Models || []).filter(m => m).map(m => emitModel(m, fileInfo, classes)),
         animations: (fileInfo.Animations || []).filter(a => a).map(a => emitAnimation(a, classes))
-    });
+    }, hydrationOptions);
 }

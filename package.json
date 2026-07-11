@@ -1,7 +1,7 @@
 {
   "name": "@carbonenginejs/format-gr2",
-  "version": "0.1.2",
-  "description": "CarbonEngineJS GR2 format package. Decodes RAD Granny .gr2 sections, walks the Granny type tree, and emits GR2 JSON or caller-supplied classes.",
+  "version": "0.1.3",
+  "description": "CarbonEngineJS Granny format package. Decodes .gr2 and .gsf sections, walks the Granny type tree, and emits GR2 data or GState semantics.",
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -26,6 +26,8 @@
     "gr2",
     "granny",
     "granny3d",
+    "gsf",
+    "granny-state",
     "rad",
     "oodle1",
     "bitknit",
@@ -48,6 +50,14 @@
   },
   "devDependencies": {
     "eslint": "^8.57.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carbonenginejs/format-gr2.git"
+  },
+  "homepage": "https://github.com/carbonenginejs/format-gr2#readme",
+  "bugs": {
+    "url": "https://github.com/carbonenginejs/format-gr2/issues"
   },
   "publishConfig": {
     "access": "public"

@@ -1,11 +1,15 @@
 # @carbonenginejs/format-gr2
 
-Pure-JavaScript CarbonEngineJS-facing reader for RAD Granny 3D `.gr2` files. No
+Pure-JavaScript CarbonEngineJS-facing reader for RAD Granny 3D `.gr2` and
+Granny State `.gsf` files. No
 `granny2.dll`, no native addons, no build step; it runs in Node and the browser.
 
 It decodes every section-compression codec used by current EVE Online assets
 (None, Oodle1, BitKnit2), reconstructs the Granny object graph by walking the
 file's embedded type tree, and emits GR2 JSON or caller-supplied classes.
+Because GSF uses the same Granny container and reflected type tree, this package
+also detects GState roots and exposes their state-machine data, animation slots,
+animation sets, model/retarget hints, and relative `.gr2` references.
 
 This format profile targets GR2 assets and packed tangent conventions used by
 CarbonEngine and Fenris Creations (CCP Games). The tangent-frame math is a
@@ -31,7 +35,7 @@ stays easy to review.
 import CjsFormatGr2 from "@carbonenginejs/format-gr2";
 
 const reader = new CjsFormatGr2({
-  emit: "json",             // "json" (default) | "raw"
+  emit: "json",             // "json"/"gr2Json" default | "gr2" | "cmf" | "raw"
   decompressCurves: false,  // opt-in: resolve compressed granny curves
   unpackTangents: false,    // opt-in: unpack packed CCP tangent frames
   rebuildMissingNormals: false,
@@ -56,6 +60,11 @@ const reader = new CjsFormatGr2({
 const json = reader.Read(buffer);
 const summary = reader.Inspect(buffer);
 const text = JSON.stringify(reader.ToJSON(json));
+
+if (CjsFormatGr2.isGsf(buffer)) {
+  const gstate = CjsFormatGr2.readGsf(buffer);
+  const summary = CjsFormatGr2.inspectGsf(buffer);
+}
 ```
 
 The named export is the same class for callers that prefer named imports:
@@ -73,6 +82,12 @@ import { CjsFormatGr2 } from "@carbonenginejs/format-gr2";
   `emit(event)` instance method.
 - Static one-shot methods are camelCase because they live on `CjsFormatGr2`
   itself, not on hydrated CarbonClass instances.
+- GSF is a semantic profile of the same Granny container, not a separate
+  codec. Use `isGsf`, `readGsf`, `readGsfAsync`, and `inspectGsf`; instance
+  equivalents are `IsGSF`, `ReadGSF`, and `InspectGSF`.
+- The package determines the input family: GR2 binary or GR2-shaped data for
+  load-style APIs. `emit` determines the output shape, and `classes` must match
+  that emitted shape.
 - JSON builds use `reader.Read(buffer)` or static `CjsFormatGr2.read(buffer)`.
   They return GR2 JSON by default.
 - Class builds use the same read path with configured classes. Use
@@ -94,7 +109,8 @@ import { CjsFormatGr2 } from "@carbonenginejs/format-gr2";
 
 ## GR2 JSON Graph
 
-`emit: "json"` is the default. It returns a stable, JSON-compatible graph with
+`emit: "json"` is the default; `"gr2Json"` remains the explicit debug alias for
+the same JSON-compatible graph. It returns a stable graph with
 deinterleaved vertex channels, triangle-index groups, embedded model skeletons,
 and compact animation curve records. Square-bracketed fields are conditional:
 
@@ -148,8 +164,11 @@ format-specific data.
 
 ## Options
 
-- `emit`: `"json"` default. `"raw"` returns the reflected `granny_file_info`
-  graph from the low-level reader.
+- `emit`: `"json"`/`"gr2Json"` default. `"gr2"` and `"cmf"` hydrate
+  caller-supplied compatibility classes for runtime-style consumers; their
+  `classes` maps must contain the constructors required by that output shape.
+  `"raw"` returns the reflected `granny_file_info` graph from the low-level
+  reader.
 - `decompressCurves`: default `false`. When `true`, every animation transform
   curve gains decoded `knots`, `controls`, and `dimension` fields while keeping
   the raw compressed fields.
@@ -172,23 +191,24 @@ format-specific data.
 - `classes`: optional for `new CjsFormatGr2(options)`, `Read`, and static
   `read`. Maps node keys to constructors that follow the class hydration
   contract below; omitted keys remain plain objects. Accepted keys are shown in
-  the example above and exposed as `CjsFormatGr2.CLASS_KEYS`.
+  the example above and exposed as `CjsFormatGr2.CLASS_KEYS`. With the default
+  `emit: "json"`, classes describe the GR2 JSON graph.
 
 ## Class Hydration Contract
 
 Class hydration is structural and intentionally thin. For each registered key,
-the reader creates an instance and assigns the same fields that would have been
-written to the plain GR2 JSON object:
+the reader creates an instance and passes the same fields that would have been
+written to the plain GR2 JSON object through the CarbonEngineJS `SetValues`
+convention:
 
 ```js
-Object.assign(new Class(), nodeFields);
+new Class().SetValues(nodeFields);
 ```
 
-Provided classes must be constructible with no required arguments and must allow
-their GR2 JSON fields to be assigned as public writable properties or setters.
-They do not need to predeclare fields, but if they do, use the names below. If a
-class implements `toJSON`, `ToJSON` / `toJSON` will use it during JSON-compatible
-conversion.
+Provided classes must be constructible with no required arguments and must
+implement `SetValues(values)`. They do not need to predeclare fields, but if they
+do, use the names below. If a class implements `toJSON`, `ToJSON` / `toJSON`
+will use it during JSON-compatible conversion.
 
 The class map accepted by `SetClasses(classes)` and `options.classes` can contain
 only the keys in `CjsFormatGr2.CLASS_KEYS`. `SetClass(type, Class)` accepts one
@@ -219,6 +239,11 @@ class MyMesh {
 
 `Mesh.vertex` and `MorphTarget.vertex` are plain channel containers with flat
 numeric arrays. Missing channels are empty arrays.
+
+`MorphTarget.name` preserves the source Granny `ScalarName`. Carbon/Trinity
+runtime resources strip a trailing exact `Shape` suffix when exposing morph
+weight controls; this reader leaves that runtime-name normalization to
+resource/adaptor code.
 
 | Vertex field | Layout |
 |---|---|
