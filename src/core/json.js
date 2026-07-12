@@ -164,6 +164,27 @@ function copyChannel(vertices, memberName, destWidth)
     return out;
 }
 
+const VERTEX_CHANNELS = Object.freeze([
+    [ "position", "Position", 3 ],
+    [ "blendIndice", "BoneIndices", 4 ],
+    [ "tangent", "Tangent", 4 ],
+    [ "normal", "Normal", 3 ],
+    [ "texcoord0", "TextureCoordinates0", 2 ],
+    [ "texcoord1", "TextureCoordinates1", 2 ],
+    [ "binormal", "Binormal", 4 ],
+    [ "blendWeight", "BoneWeights", 4 ]
+]);
+
+function emitVertexChannels(vertices)
+{
+    const channels = {};
+    for (const [ name, memberName, width ] of VERTEX_CHANNELS)
+    {
+        channels[name] = copyChannel(vertices, memberName, width);
+    }
+    return channels;
+}
+
 /**
  * Flatten reflected scalar-array wrappers into plain JavaScript values.
  *
@@ -369,17 +390,63 @@ function emitMorphTarget(mt, classes = {})
     return build(classes, "MorphTarget", {
         name: mt.ScalarName ?? "",
         dataIsDeltas: !!mt.DataIsDeltas,
-        vertex: {
-            position: copyChannel(verts, "Position", 3),
-            blendIndice: copyChannel(verts, "BoneIndices", 4),
-            tangent: copyChannel(verts, "Tangent", 4),
-            normal: copyChannel(verts, "Normal", 3),
-            texcoord0: copyChannel(verts, "TextureCoordinates0", 2),
-            texcoord1: copyChannel(verts, "TextureCoordinates1", 2),
-            binormal: copyChannel(verts, "Binormal", 4),
-            blendWeight: copyChannel(verts, "BoneWeights", 4)
-        }
+        vertex: emitVertexChannels(verts)
     });
+}
+
+function mappedAnnotationRows(set, vertexCount)
+{
+    const
+        annotations = set.VertexAnnotations || [],
+        map = scalarArray(set.VertexAnnotationIndices),
+        rows = [],
+        vertexIndices = [];
+
+    if (set.IndicesMapFromVertexToAnnotation)
+    {
+        for (let vertexIndex = 0; vertexIndex < Math.min(map.length, vertexCount); vertexIndex++)
+        {
+            const annotationIndex = map[vertexIndex];
+            if (!Number.isInteger(annotationIndex) || annotationIndex < 0 || annotationIndex >= annotations.length) continue;
+            rows.push(annotations[annotationIndex]);
+            vertexIndices.push(vertexIndex);
+        }
+    }
+    else
+    {
+        const count = map.length ? Math.min(map.length, annotations.length) : annotations.length;
+        for (let annotationIndex = 0; annotationIndex < count; annotationIndex++)
+        {
+            const vertexIndex = map.length ? map[annotationIndex] : annotationIndex;
+            if (!Number.isInteger(vertexIndex) || vertexIndex < 0 || vertexIndex >= vertexCount) continue;
+            rows.push(annotations[annotationIndex]);
+            vertexIndices.push(vertexIndex);
+        }
+    }
+
+    Object.defineProperty(rows, "__type", {
+        value: annotations.__type || [],
+        configurable: true
+    });
+
+    const identity = rows.length === vertexCount && vertexIndices.every((value, index) => value === index);
+    return { rows, vertexIndices: identity ? null : vertexIndices };
+}
+
+function emitVertexAnnotationTarget(set, vertexCount, classes = {})
+{
+    if (!set || !set.VertexAnnotations?.length) return null;
+
+    const mapped = mappedAnnotationRows(set, vertexCount);
+    if (!mapped.rows.length) return null;
+
+    const target = {
+        name: set.Name ?? "",
+        dataIsDeltas: true,
+        vertex: emitVertexChannels(mapped.rows)
+    };
+    if (mapped.vertexIndices) target.vertexIndices = mapped.vertexIndices;
+    return build(classes, "MorphTarget", target);
 }
 
 /**
@@ -393,7 +460,6 @@ function emitMesh(mesh, classes = {})
 {
     const o = {};
     o.name = mesh.Name ?? "";
-    o.morphTargets = (mesh.MorphTargets || []).map(mt => emitMorphTarget(mt, classes));
     o.minBounds = [ 0, 0, 0 ];
     o.maxBounds = [ 0, 0, 0 ];
 
@@ -406,16 +472,11 @@ function emitMesh(mesh, classes = {})
     const
         vd = mesh.PrimaryVertexData,
         verts = (vd && vd.Vertices) || [];
-    o.vertex = {
-        position: copyChannel(verts, "Position", 3),
-        blendIndice: copyChannel(verts, "BoneIndices", 4),
-        tangent: copyChannel(verts, "Tangent", 4),
-        normal: copyChannel(verts, "Normal", 3),
-        texcoord0: copyChannel(verts, "TextureCoordinates0", 2),
-        texcoord1: copyChannel(verts, "TextureCoordinates1", 2),
-        binormal: copyChannel(verts, "Binormal", 4),
-        blendWeight: copyChannel(verts, "BoneWeights", 4)
-    };
+    o.vertex = emitVertexChannels(verts);
+    o.morphTargets = (mesh.MorphTargets || []).map(mt => emitMorphTarget(mt, classes));
+    o.morphTargets.push(...(vd?.VertexAnnotationSets || [])
+        .map(set => emitVertexAnnotationTarget(set, verts.length, classes))
+        .filter(Boolean));
 
     const
         topo = mesh.PrimaryTopology || {},

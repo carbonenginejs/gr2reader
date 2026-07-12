@@ -55,6 +55,33 @@ export const GR2_MAGICS = Object.freeze({
 });
 const MAGICS = GR2_MAGICS;
 
+const HEX_BYTES = Array.from({ length: 256 }, (_, value) => value.toString(16).padStart(2, "0"));
+const UTF8_DECODER = new TextDecoder("utf-8");
+
+/**
+ * Convert bytes to a lowercase hexadecimal string without relying on Node's Buffer.
+ *
+ * @param {Uint8Array} bytes Source bytes.
+ * @returns {string} Two hexadecimal characters per byte.
+ */
+export function bytesToHex(bytes)
+{
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) out += HEX_BYTES[bytes[i]];
+    return out;
+}
+
+/**
+ * Decode UTF-8 bytes using the browser and Node standard Encoding API.
+ *
+ * @param {Uint8Array} bytes UTF-8 encoded bytes.
+ * @returns {string} Decoded text.
+ */
+export function decodeUtf8(bytes)
+{
+    return UTF8_DECODER.decode(bytes);
+}
+
 /**
  * Convert an IEEE 754 binary16 value to a JavaScript number.
  *
@@ -136,7 +163,7 @@ export function readGr2Raw(buf)
      */
     const
         fu32 = o => dv0.getUint32(o, true),
-        magic = Buffer.from(buf.subarray(0, 16)).toString("hex"),
+        magic = bytesToHex(buf.subarray(0, 16)),
         P = MAGICS[magic];
 
     if (!P) throw new Error("unknown gr2 magic " + magic);
@@ -259,7 +286,7 @@ export function readGr2Raw(buf)
         if (g < 0) return null;
         let end = g;
         while (end < mem.length && mem[end] !== 0) end++;
-        return Buffer.from(mem.subarray(g, end)).toString("utf8");
+        return decodeUtf8(mem.subarray(g, end));
     }
 
     const typeCache = new Map();

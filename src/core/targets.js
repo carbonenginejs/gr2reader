@@ -22,6 +22,18 @@ export const CMF_CLASS_KEYS = Object.freeze([
     "AnimationCurve"
 ]);
 
+const CHANNELS = Object.freeze([
+    { name: "position", usage: "Position", elementCount: 3 },
+    { name: "normal", usage: "Normal", elementCount: 3 },
+    { name: "tangent", usage: "Tangent", elementCount: 4, flexible: true },
+    { name: "binormal", usage: "Binormal", elementCount: 4, flexible: true },
+    { name: "texcoord0", usage: "TexCoord", elementCount: 2, usageIndex: 0 },
+    { name: "texcoord1", usage: "TexCoord", elementCount: 2, usageIndex: 1 },
+    { name: "color0", usage: "Color", elementCount: 4, usageIndex: 0 },
+    { name: "blendIndice", usage: "BoneIndices", elementCount: 4, usageIndex: 0, type: "UInt16" },
+    { name: "blendWeight", usage: "BoneWeights", elementCount: 4, usageIndex: 0 }
+]);
+
 export function buildCmfFromShared(root)
 {
     return {
@@ -42,8 +54,8 @@ function buildMesh(mesh)
         affectedByBones = boneBindings.length > 0,
         morphTargets = buildMorphTargets(mesh),
         affectedByMorphTargets = morphTargets.targets.length > 0,
-        stride = estimateVertexStride(vertex),
-        vertexCount = stride === 0 ? 0 : Math.floor((vertex.position ?? []).length / 3);
+        vertexCount = vertexCountOf(vertex),
+        stride = estimateVertexStride(vertex, vertexCount);
 
     return {
         name: mesh.name ?? "",
@@ -95,28 +107,93 @@ function buildMorphTargets(mesh)
     }
 
     const
-        firstVertex = targets.find((target) => target.vertex)?.vertex ?? {},
-        decl = buildDecl(firstVertex),
-        stride = estimateStrideFromDecl(decl);
+        baseVertex = mesh.vertex ?? {},
+        vertexCount = vertexCountOf(baseVertex),
+        specs = morphChannelSpecs(targets, baseVertex, vertexCount),
+        decl = buildDeclFromSpecs(specs),
+        stride = estimateStrideFromDecl(decl),
+        vertices = targets.map((target) => canonicalMorphVertex(baseVertex, target, specs, vertexCount));
 
     return {
         decl,
-        targets: targets.map((target) => ({
+        targets: targets.map((target, index) => ({
             name: target.name ?? "",
-            maxDisplacement: target.maxDisplacement ?? maxDisplacement(mesh.vertex?.position ?? [], target.vertex?.position ?? [])
+            maxDisplacement: target.maxDisplacement ?? maxDisplacement(vertices[index].position ?? [])
         })),
-        lods: targets.map((target) =>
+        lods: vertices.map((vertex) => ({
+            vb: { index: 0, offset: 0, size: vertexCount * stride, stride },
+            vertex
+        }))
+    };
+}
+
+function morphChannelSpecs(targets, baseVertex, vertexCount)
+{
+    return CHANNELS.flatMap((spec) =>
+    {
+        let elementCount = 0;
+        for (const target of targets)
         {
             const
-                morphVertex = target.vertex ?? {},
-                vertexCount = Math.floor((morphVertex.position ?? []).length / 3);
+                vertex = target.vertex ?? {},
+                values = vertex[spec.name] ?? [];
+            if (!values.length) continue;
+            const count = targetSourceCount(target, vertexCount);
+            elementCount = Math.max(elementCount, channelWidth(spec, vertex, count));
+        }
+        if (!elementCount) return [];
+        if ((baseVertex[spec.name] ?? []).length)
+        {
+            elementCount = Math.max(elementCount, channelWidth(spec, baseVertex, vertexCount));
+        }
+        return [ { ...spec, elementCount } ];
+    });
+}
 
-            return {
-                vb: { index: 0, offset: 0, size: vertexCount * stride, stride },
-                vertex: morphVertex
-            };
-        })
-    };
+function canonicalMorphVertex(baseVertex, target, specs, vertexCount)
+{
+    const
+        sourceVertex = target.vertex ?? {},
+        vertexIndices = Array.isArray(target.vertexIndices) ? target.vertexIndices : null,
+        sourceCount = targetSourceCount(target, vertexCount),
+        result = {};
+
+    for (const spec of specs)
+    {
+        const
+            source = sourceVertex[spec.name] ?? [],
+            output = new Array(vertexCount * spec.elementCount).fill(0),
+            sourceWidth = channelWidth(spec, sourceVertex, sourceCount),
+            base = baseVertex[spec.name] ?? [],
+            baseWidth = channelWidth(spec, baseVertex, vertexCount),
+            rowCount = Math.min(sourceCount, sourceWidth ? Math.floor(source.length / sourceWidth) : 0);
+
+        for (let row = 0; row < rowCount; row++)
+        {
+            const vertexIndex = vertexIndices ? vertexIndices[row] : row;
+            if (!Number.isInteger(vertexIndex) || vertexIndex < 0 || vertexIndex >= vertexCount) continue;
+
+            const count = Math.min(sourceWidth, spec.elementCount);
+            for (let component = 0; component < count; component++)
+            {
+                const
+                    sourceValue = source[row * sourceWidth + component],
+                    baseValue = base[vertexIndex * baseWidth + component] ?? 0;
+                output[vertexIndex * spec.elementCount + component] = target.dataIsDeltas === false
+                    ? sourceValue - baseValue
+                    : sourceValue;
+            }
+        }
+        result[spec.name] = output;
+    }
+
+    return result;
+}
+
+function targetSourceCount(target, fallbackCount)
+{
+    if (Array.isArray(target.vertexIndices)) return target.vertexIndices.length;
+    return vertexCountOf(target.vertex ?? {}, fallbackCount);
 }
 
 function buildBoneBinding(binding)
@@ -130,33 +207,67 @@ function buildBoneBinding(binding)
     };
 }
 
-function buildDecl(vertex)
+function buildDecl(vertex, vertexCount = vertexCountOf(vertex))
+{
+    const specs = CHANNELS
+        .filter((spec) => Array.isArray(vertex[spec.name]) && vertex[spec.name].length > 0)
+        .map((spec) => ({ ...spec, elementCount: channelWidth(spec, vertex, vertexCount) }));
+    return buildDeclFromSpecs(specs);
+}
+
+function buildDeclFromSpecs(specs)
 {
     const decl = [];
     let offset = 0;
-    for (const channel of [
-        [ "position", "Position", 3 ],
-        [ "normal", "Normal", 3 ],
-        [ "tangent", "Tangent", 3 ],
-        [ "binormal", "Binormal", 3 ],
-        [ "texcoord0", "TexCoord", 2, 0 ],
-        [ "texcoord1", "TexCoord", 2, 1 ],
-        [ "color0", "Color", 4, 0 ],
-        [ "blendIndice", "BoneIndices", 4, 0, "UInt16" ],
-        [ "blendWeight", "BoneWeights", 4, 0 ]
-    ])
+    for (const spec of specs)
     {
-        const [ name, usage, elementCount, usageIndex = 0, type = "Float32" ] = channel;
-        if (!Array.isArray(vertex[name]) || vertex[name].length === 0) continue;
+        const { usage, usageIndex = 0, type = "Float32", elementCount } = spec;
         decl.push({ usage, usageIndex, type, elementCount, offset });
         offset += elementCount * elementTypeSize(type);
     }
     return decl;
 }
 
-function estimateVertexStride(vertex)
+function channelWidth(spec, vertex, vertexCount)
 {
-    return estimateStrideFromDecl(buildDecl(vertex));
+    const values = vertex[spec.name] ?? [];
+    if (spec.flexible && vertexCount > 0 && values.length % vertexCount === 0)
+    {
+        const width = values.length / vertexCount;
+        if (width === 3 || width === 4) return width;
+    }
+    return spec.elementCount;
+}
+
+function vertexCountOf(vertex, expectedCount = 0)
+{
+    if (expectedCount > 0)
+    {
+        for (const spec of CHANNELS)
+        {
+            const values = vertex[spec.name] ?? [];
+            if (values.length && values.length % expectedCount === 0) return expectedCount;
+        }
+    }
+
+    for (const spec of CHANNELS)
+    {
+        const values = vertex[spec.name] ?? [];
+        if (!values.length) continue;
+        if (spec.flexible)
+        {
+            if (values.length % spec.elementCount === 0) return values.length / spec.elementCount;
+            if (values.length % 3 === 0) return values.length / 3;
+        }
+        const count = values.length / spec.elementCount;
+        if (Number.isInteger(count)) return count;
+    }
+    return 0;
+}
+
+function estimateVertexStride(vertex, vertexCount)
+{
+    return estimateStrideFromDecl(buildDecl(vertex, vertexCount));
 }
 
 function estimateStrideFromDecl(decl)
@@ -194,15 +305,15 @@ function bounds(mesh)
     };
 }
 
-function maxDisplacement(basePositions, targetPositions)
+function maxDisplacement(deltaPositions)
 {
     let max = 0;
-    for (let i = 0; i < Math.min(basePositions.length, targetPositions.length); i += 3)
+    for (let i = 0; i + 2 < deltaPositions.length; i += 3)
     {
         max = Math.max(max, Math.hypot(
-            targetPositions[i] - basePositions[i],
-            targetPositions[i + 1] - basePositions[i + 1],
-            targetPositions[i + 2] - basePositions[i + 2]
+            deltaPositions[i],
+            deltaPositions[i + 1],
+            deltaPositions[i + 2]
         ));
     }
     return max;

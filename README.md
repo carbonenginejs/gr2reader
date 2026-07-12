@@ -122,7 +122,7 @@ Root
 |   |-- boneBindings: BoneBinding[]
 |   |   `-- name, minBounds, maxBounds
 |   |-- morphTargets: MorphTarget[]
-|   |   |-- name, dataIsDeltas
+|   |   |-- name, dataIsDeltas, [vertexIndices]
 |   |   `-- vertex: VertexChannels
 |   |-- vertex: VertexChannels
 |   |   |-- position, normal, tangent, binormal
@@ -228,7 +228,7 @@ class MyMesh {
 | `Mesh` | `name`, `morphTargets`, `minBounds`, `maxBounds`, `boneBindings`, `vertex`, `indices` |
 | `BoneBinding` | `name`, `minBounds`, `maxBounds` |
 | `IndexGroup` | `name`, `bytesPerIndex`, `faces` |
-| `MorphTarget` | `name`, `dataIsDeltas`, `vertex` |
+| `MorphTarget` | `name`, `dataIsDeltas`, `vertex`, optional `vertexIndices` |
 | `Model` | `name`, `skeleton`, `meshBindings`, optional `extendedData` |
 | `Skeleton` | `name`, `bones`, optional `extendedData` |
 | `Bone` | `name`, `parentIndex`, `flag`, optional `position`, `orientation`, `scaleShear`, `extendedData` |
@@ -238,7 +238,17 @@ class MyMesh {
 | `Curve` | `format`, `degree`, plus format-specific curve fields such as `dimension`, `knots`, `controls`, `oneOverKnotScaleTrunc`, `controlScaleOffsets`, `scaleOffsetTableEntries`, `oneOverKnotScale`, `controlScales`, `controlOffsets`, `knotsControls`, or `error` |
 
 `Mesh.vertex` and `MorphTarget.vertex` are plain channel containers with flat
-numeric arrays. Missing channels are empty arrays.
+numeric arrays. Missing channels are empty arrays. Native Granny morph targets
+contain one row per mesh vertex. CCP character blend shapes stored as Granny
+vertex annotation sets use the same `MorphTarget` shape with `dataIsDeltas:
+true`; sparse targets additionally contain `vertexIndices`, whose entries map
+each target row to its mesh vertex. Empty annotation sets are omitted.
+
+The CMF output expands sparse targets to the mesh vertex count and stores every
+target as additive deltas. Native targets with `dataIsDeltas: false` are
+converted from absolute attributes by subtracting the corresponding base mesh
+attributes. Its morph declaration is the union of channels used by all targets,
+and absent channels are zero-filled.
 
 `MorphTarget.name` preserves the source Granny `ScalarName`. Carbon/Trinity
 runtime resources strip a trailing exact `Shape` suffix when exposing morph
