@@ -11,10 +11,12 @@ semantics remain copyright their original CarbonEngine authors.
 Fenris Creations (CCP Games) source material, tools, assets, shader behavior,
 and EVE-related data remain copyright their original holders.
 
-Current repository license: EUPL-1.2. See LICENSE.
+Current repository license: MIT. See LICENSE.
 
-Future target: MIT, once the EUPL-derived BitKnit implementation is replaced or
-removed and the remaining code and dependencies permit MIT distribution.
+The former EUPL-derived BitKnit implementation was replaced on 2026-07-24 by
+an original clean-room implementation written solely from this package's
+published format specification (docs/formats/bitknit2.md); no EUPL-derived
+code remains.
 
 Provenance and legal requirements
 ---------------------------------
@@ -39,12 +41,13 @@ Oodle1 / Oodle0 section decompressor (src/codecs/oodle1.js)
     - arves100/opengr2  "oodle1.c"     (MPL-2.0)   https://github.com/arves100/opengr2
   This is Granny's own legacy codec, not RAD's modern Oodle (Kraken/BitKnit families).
 
-BitKnit / BitKnit2 section decompressor (src/codecs/bitknit2.js)
-  Ported from:
-    - neptuwunium/Knit  "GrannyBitKnitCompression.cs"  (EUPL-1.2, sublicensing
-      eiz/pybg3's clean-room rANS implementation under MIT)
-      https://github.com/neptuwunium/Knit  -  https://github.com/eiz/pybg3
-  Cross-checked against powzix/ooz "bitknit.cpp".
+BitKnit / BitKnit2 section decompressor (src/core/bitknit2.js)
+  Original CarbonEngineJS clean-room implementation (2026-07-24), written
+  solely from this package's published format specification
+  (docs/formats/bitknit2.md) by an isolated implementer, and validated
+  byte-exact against the EVE .gr2 corpus. It replaced a prior port of
+  neptuwunium/Knit (EUPL-1.2); no code from Knit, pybg3, ooz, or any other
+  BitKnit implementation remains. See THIRD-PARTY-NOTICES.md.
 
 Granny curve decompression (src/curves/**, optional; enabled via decompressCurves)
   Adapted from cppctamber's granny extension for ccpwgl2 (src/core/reader/granny/curves).

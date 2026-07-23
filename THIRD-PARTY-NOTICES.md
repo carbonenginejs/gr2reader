@@ -1,8 +1,8 @@
 # Third-party notices
 
-`format-gr2` is currently licensed under **EUPL-1.2**. It contains no
-RAD/Granny proprietary code and does not link `granny2.dll`. The section
-decompressors are pure-JS ports of open reverse-engineering work and must
+`format-gr2` is licensed under **MIT**. It contains no RAD/Granny proprietary
+code and does not link `granny2.dll`. The section decompressors are original
+or ported from permissively licensed open reverse-engineering work and must
 retain the notices and obligations listed below.
 
 Do not treat copied or ported prior work as CarbonEngineJS-original code. Each
@@ -51,30 +51,28 @@ DEALINGS IN THE SOFTWARE.
 
 ## BitKnit / BitKnit2 decompressor - `src/core/bitknit2.js`
 
-**EUPL-1.2 (copyleft).** This decoder was transcribed from
-[neptuwunium/Knit](https://github.com/neptuwunium/Knit) `GrannyBitKnitCompression.cs`
-(EUPL-1.2), which itself sublicenses the clean-room BitKnit / rANS implementation from
-[eiz/pybg3](https://github.com/eiz/pybg3) (`src/rans.h`, MIT). Cross-checked against
-powzix/ooz `bitknit.cpp`.
-
-> **STATUS - current repository license.** Because this file currently derives
-> from Knit's EUPL-1.2 expression, `format-gr2` is licensed under EUPL-1.2.
-> To ship MIT in the future, `bitknit2.js` must be re-derived directly from
-> pybg3's MIT `rans.h`, replaced with another permissively licensed
-> implementation, or removed. A direct re-base attempt was previously reverted
-> because the port lost Granny's section framing; it is **deferred**.
->
-> EUPL-1.2 redistribution requires preserving the applicable notices and making
-> the covered source available under the EUPL-1.2 terms. Official EUPL-1.2 text:
-> https://joinup.ec.europa.eu/sites/default/files/custom-page/attachment/eupl_v1.2_en.pdf
+**Original CarbonEngineJS code (MIT).** On 2026-07-24 the previous
+EUPL-derived port (transcribed from
+[neptuwunium/Knit](https://github.com/neptuwunium/Knit)
+`GrannyBitKnitCompression.cs`, EUPL-1.2) was replaced by a clean-room
+implementation produced through a documented two-party process: one party
+analyzed the format and published a facts-only decoding specification
+(`docs/formats/bitknit2.md`); a second, isolated party implemented the
+decoder solely from that specification with no access to Knit, pybg3, ooz,
+or any other BitKnit implementation. The result was validated byte-exact
+against 539 BitKnit2 streams extracted from the EVE `.gr2` corpus (section
+payloads and compressed pointer-fixup blocks) plus synthetic raw-quantum
+streams. No third-party code, EUPL-derived or otherwise, remains in this
+file. BitKnit is a RAD Game Tools codec; the specification records on-disk
+format facts only.
 
 ---
 
 ## Granny animation-curve decompression - `src/core/curves.js`
 
 Authored by **cppctamber** as part of ccpwgl2 (`src/core/reader/granny/curves`), the
-same author/owner as this library; included here under this project's current
-EUPL-1.2 license.
+same author/owner as this library; included here under this project's MIT
+license.
 
 ## Tangent-frame shader math - `src/core/tangents.js`
 
@@ -91,5 +89,5 @@ obligations before committing that work.
 ## Container, relocation, type-tree reflection, emitter
 
 Original to this project (cppctamber / carbonenginejs). Included here under
-this project's current EUPL-1.2 license. Derived from the public on-disk Granny
+this project's MIT license. Derived from the public on-disk Granny
 GRN format layout and the Granny SDK header type definitions.

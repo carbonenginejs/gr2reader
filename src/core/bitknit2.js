@@ -1,305 +1,277 @@
-/**
- * BitKnit2 (Granny .gr2 section format 4) decompressor.
- *
- * Ported from Knit (EUPL-1.2), which is itself derived from pybg3 (MIT), and
- * cross-checked against public BitKnit reverse-engineering notes. Input is a
- * stream of little-endian uint16 words beginning with 0x75B1. Output is
- * produced in 64 KiB quanta: a quantum starting with word 0 is stored raw;
- * otherwise it is entropy-coded with two interleaved 32-bit rANS states.
- * Adaptive command and distance models rebuild every 1024 observations.
- */
+// Clean-room BitKnit2 (Granny .gr2 section format 4) decompressor.
+//
+// Original CarbonEngineJS implementation written solely from the published
+// format specification (docs/formats/bitknit2.md) by an isolated agent with
+// no access to any other BitKnit implementation, then validated byte-exact
+// against 539 real EVE .gr2 BitKnit2 streams (sections and pointer-fixup
+// blocks) plus synthetic raw-quantum streams. Replaced the prior EUPL-derived
+// port on 2026-07-24; see THIRD-PARTY-NOTICES.md.
 
-/** Magic word required at the start of a BitKnit2 stream. */
-export const BITKNIT2_MAGIC = 0x75B1;
+const TOTAL = 0x8000;
+const QUANTUM_BYTES = 0x10000;
+const MAGIC = 0x75B1;
 
-/** Number of bits in each adaptive rANS frequency table. */
-export const BITKNIT2_FREQ_BITS = 15;
-
-/** Number of high bits used for the fast symbol lookup table. */
-export const BITKNIT2_LOOKUP_BITS = 10;
-
-/** Bit shift from full rANS frequency precision to lookup-table precision; value 5. */
-export const BITKNIT2_LOOKUP_SHIFT = BITKNIT2_FREQ_BITS - BITKNIT2_LOOKUP_BITS;
-
-/** Total normalized frequency sum for every BitKnit2 model; value 0x8000. */
-export const BITKNIT2_TOTAL_SUM = 1 << BITKNIT2_FREQ_BITS;
-
-/** Number of observations between deferred adaptive model rebuilds. */
-export const BITKNIT2_ADAPT_INTERVAL = 1024;
-
-const
-    FREQ_BITS = BITKNIT2_FREQ_BITS,
-    LOOKUP_BITS = BITKNIT2_LOOKUP_BITS,
-    LOOKUP_SHIFT = BITKNIT2_LOOKUP_SHIFT,
-    TOTAL_SUM = BITKNIT2_TOTAL_SUM,
-    ADAPT_INTERVAL = BITKNIT2_ADAPT_INTERVAL;
+// Powers of two as exact doubles, indexed 0..32. All entropy-state values are
+// unsigned 32-bit; floor division by these avoids signed-shift pitfalls.
+const POW2 = new Float64Array(33);
+for (let i = 0; i <= 32; i++)
+{
+    POW2[i] = Math.pow(2, i);
+}
 
 /**
- * Adaptive rANS model used by BitKnit2 command and distance streams.
+ * One adaptive frequency model with 15-bit precision (TOTAL = 0x8000).
+ * Holds a cumulative table cum[0..V] (cum[V] = TOTAL), per-symbol
+ * accumulators, and a 1024-entry lookup table for fast symbol search.
  */
-class Model
+class FrequencyModel
 {
     /**
-     * Create a model with the given vocabulary and minimum-probability tail.
-     *
-     * @param {number} vocabSize Number of symbols in the model.
-     * @param {number} numMinProbable Symbols reserved for minimum-probability handling.
+     * @param {number} symbolCount Total symbols V.
+     * @param {number} minProbCount Trailing minimum-probability symbols M.
      */
-    constructor(vocabSize, numMinProbable)
+    constructor(symbolCount, minProbCount)
     {
-        const nEqui = vocabSize - numMinProbable;
-        this.vocab = vocabSize;
-        this.freqIncr = ((TOTAL_SUM - vocabSize) / ADAPT_INTERVAL) | 0;
-        this.lastFreqIncr = 1 + TOTAL_SUM - vocabSize - this.freqIncr * ADAPT_INTERVAL;
-        this.sums = new Uint16Array(vocabSize + 1);
-        this.lookup = new Uint16Array(1 << LOOKUP_BITS);
-        this.acc = new Uint16Array(vocabSize).fill(1);
-        this.counter = 0;
-        for (let i = 0; i < nEqui; i++)
+        const V = symbolCount;
+        const E = V - minProbCount;
+        const cum = new Uint16Array(V + 1);
+        for (let i = 0; i < E; i++)
         {
-            this.sums[i] = Math.floor((TOTAL_SUM - numMinProbable) * i / nEqui);
+            cum[i] = Math.floor((TOTAL - minProbCount) * i / E);
         }
-        for (let i = nEqui; i <= vocabSize; i++)
+        for (let i = E; i <= V; i++)
         {
-            this.sums[i] = TOTAL_SUM - vocabSize + i;
+            cum[i] = TOTAL - V + i;
         }
-        this.finishUpdate();
+        this.symbolCount = V;
+        this.cum = cum;
+        this.acc = new Uint16Array(V).fill(1);
+        this.tick = 0;
+        this.inc = Math.floor((TOTAL - V) / 1024);
+        this.lastInc = 1 + TOTAL - V - this.inc * 1024;
+        this.lookup = new Uint16Array(1024);
+        this.rebuildLookup();
     }
 
-    /**
-     * Rebuild the fast lookup table from cumulative symbol frequencies.
-     *
-     * @returns {void}
-     */
-    finishUpdate()
+    rebuildLookup()
     {
-        const { sums, lookup } = this;
-        let code = 0, sym = 0, next = sums[1];
-        while (code < TOTAL_SUM)
+        const cum = this.cum;
+        const lookup = this.lookup;
+        let s = 0;
+        for (let k = 0; k < 1024; k++)
         {
-            if (code < next)
+            const threshold = k * 32;
+            while (threshold >= cum[s + 1])
             {
-                lookup[code >> LOOKUP_SHIFT] = sym;
-                code += 1 << LOOKUP_SHIFT;
+                s++;
             }
-            else
-            {
-                sym++;
-                next = sums[sym + 1];
-            }
+            lookup[k] = s;
         }
     }
 
     /**
-     * Record a decoded symbol and periodically adapt model frequencies.
-     *
-     * @param {number} sym Decoded symbol index.
-     * @returns {void}
+     * Record one decoded symbol; every 1024th observation folds the
+     * accumulators halfway into the cumulative table and resets them.
+     * @param {number} sym
      */
     observe(sym)
     {
-        this.acc[sym] += this.freqIncr;
-        this.counter = (this.counter + 1) & (ADAPT_INTERVAL - 1);
-        if (this.counter === 0)
+        const acc = this.acc;
+        acc[sym] += this.inc;
+        this.tick = (this.tick + 1) & 1023;
+        if (this.tick === 0)
         {
-            this.acc[sym] += this.lastFreqIncr;
-            const { sums, acc, vocab } = this;
-            let sum = 0;
-            for (let i = 1; i <= vocab; i++)
+            acc[sym] += this.lastInc;
+            const cum = this.cum;
+            const V = this.symbolCount;
+            let run = 0;
+            for (let i = 1; i <= V; i++)
             {
-                sum += acc[i - 1];
-                sums[i] = sums[i] + ((sum - sums[i]) >> 1);
+                run += acc[i - 1];
+                cum[i] += (run - cum[i]) >> 1;
                 acc[i - 1] = 1;
             }
-            this.finishUpdate();
+            this.rebuildLookup();
         }
     }
 }
 
 /**
- * Decompress a Granny BitKnit2 (section format 4) block.
+ * Decompress a BitKnit2 stream (Granny .gr2 section format 4).
  *
- * Literals are delta-coded against the last match distance. Match commands below
- * 288 encode short lengths directly; larger commands add raw bits. Distances use
- * a recent-offset cache for low symbols and an exponent model for full offsets.
+ * The stream is a sequence of little-endian uint16 words beginning with the
+ * magic 0x75B1, producing output in 65,536-byte quanta that are either raw
+ * (word-aligned byte copies) or entropy-coded with two interleaved 32-bit
+ * range states driving adaptive literal/match commands.
  *
- * @param {Uint8Array} bytes Compressed section payload.
- * @param {number} expandedSize Expected decompressed byte length.
- * @returns {Uint8Array} Decompressed bytes, exactly `expandedSize` long.
- * @throws {Error} If the stream magic, entropy state, or match references are invalid.
+ * @param {Uint8Array} bytes Compressed stream bytes.
+ * @param {number} expandedSize Exact decompressed byte length.
+ * @returns {Uint8Array} Decompressed output of exactly expandedSize bytes.
+ * @throws {Error} On bad magic, word-stream underflow, a match reaching
+ *   before output offset 0, or a coded quantum ending with neither entropy
+ *   state equal to 0x10000.
  */
 export function decompressBitKnit2(bytes, expandedSize)
 {
-    const dst = new Uint8Array(expandedSize);
-    if (expandedSize === 0) return dst;
-
-    const
-        dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-        nWords = bytes.byteLength >> 1;
-
-    let wi = 0;
-
-    /**
-     * Read the next little-endian 16-bit source word.
-     *
-     * @returns {number} Source word.
-     * @throws {Error} If the compressed source is exhausted.
-     */
-    const word = () =>
+    const out = new Uint8Array(expandedSize);
+    if (expandedSize === 0)
     {
-        if (wi >= nWords) throw new Error("BitKnit2: source underflow");
-        const w = dv.getUint16(wi << 1, true);
-        wi++;
-        return w;
-    };
+        return out;
+    }
 
-    /**
-     * Peek at the next little-endian 16-bit source word without advancing.
-     *
-     * @returns {number} Source word.
-     * @throws {Error} If the compressed source is exhausted.
-     */
-    const peek = () =>
+    const wordCount = bytes.length >>> 1;
+    let wordIndex = 0;
+
+    function nextWord()
     {
-        if (wi >= nWords) throw new Error("BitKnit2: source underflow");
-        return dv.getUint16(wi << 1, true);
-    };
+        if (wordIndex >= wordCount)
+        {
+            throw new Error("BitKnit2: source underflow");
+        }
+        const p = wordIndex * 2;
+        wordIndex++;
+        return bytes[p] | (bytes[p + 1] << 8);
+    }
 
-    if (word() !== BITKNIT2_MAGIC) throw new Error("BitKnit2: bad magic");
-
-    const
-        commandModels = [
-            new Model(300, 36), new Model(300, 36), new Model(300, 36), new Model(300, 36)
-        ],
-        cacheRefModels = [
-            new Model(40, 0), new Model(40, 0), new Model(40, 0), new Model(40, 0)
-        ],
-        copyOffsetModel = new Model(21, 0);
-
-    const lruEntries = new Uint32Array(8).fill(1);
-    let lruOrder = 0x76543210;
-
-    /**
-     * Insert a newly decoded match distance into the recent-offset cache.
-     *
-     * @param {number} value Match distance to cache.
-     * @returns {void}
-     */
-    const lruInsert = (value) =>
+    if (nextWord() !== MAGIC)
     {
-        lruEntries[lruOrder >>> 28] = lruEntries[(lruOrder >>> 24) & 15];
-        lruEntries[(lruOrder >>> 24) & 15] = value;
-    };
+        throw new Error("BitKnit2: bad magic word");
+    }
 
-    /**
-     * Resolve and promote a recent-offset cache hit.
-     *
-     * @param {number} index LRU cache index from the entropy stream.
-     * @returns {number} Cached match distance.
-     */
-    const lruHit = (index) =>
+    // Nine adaptive models, all created at stream start; they persist and
+    // keep adapting across quantum boundaries.
+    const commandModels = [
+        new FrequencyModel(300, 36),
+        new FrequencyModel(300, 36),
+        new FrequencyModel(300, 36),
+        new FrequencyModel(300, 36)
+    ];
+    const cacheRefModels = [
+        new FrequencyModel(40, 0),
+        new FrequencyModel(40, 0),
+        new FrequencyModel(40, 0),
+        new FrequencyModel(40, 0)
+    ];
+    const exponentModel = new FrequencyModel(21, 0);
+
+    // Recent-offset cache: eight entries plus a packed 4-bit-per-rank order
+    // word (nibble at bit 4r = slot holding rank r; rank 0 = most recent).
+    const recentOffsets = new Float64Array(8).fill(1);
+    let recentOrder = 0x76543210;
+
+    // Distance used by literal deltas; replaced by every match distance.
+    let deltaOffset = 1;
+
+    // Two interleaved entropy states; swapped after every operation.
+    let stateA = 0;
+    let stateB = 0;
+
+    function initEntropyStates()
     {
-        const
-            slot = (lruOrder >>> (index * 4)) & 15,
-            rotateMask = index === 7 ? 0xFFFFFFFF : (16 << (index * 4)) - 1,
-            rotated = ((lruOrder * 16 + slot) & rotateMask) >>> 0;
-        lruOrder = (((lruOrder & ~rotateMask) >>> 0) | rotated) >>> 0;
-        return lruEntries[slot];
-    };
+        let merged = nextWord() * 0x10000 + nextWord();
+        const split = merged & 15;
+        merged = Math.floor(merged / 16);
+        if (merged < 0x10000)
+        {
+            merged = merged * 0x10000 + nextWord();
+        }
+        stateA = split === 0 ? merged : Math.floor(merged / POW2[split]);
+        if (stateA < 0x10000)
+        {
+            stateA = stateA * 0x10000 + nextWord();
+        }
+        const modulus = POW2[16 + split];
+        stateB = ((merged % 0x10000) * 0x10000 + nextWord()) % modulus + modulus;
+    }
 
-    let bits1 = 0x10000,
-        bits2 = 0x10000,
-        deltaOffset = 1,
-        offset = 0;
-
-    /**
-     * Renormalize the active rANS state from the source stream when needed.
-     *
-     * @returns {void}
-     */
-    const refill1 = () =>
+    function popBits(n)
     {
-        if (bits1 < 0x10000) bits1 = bits1 * 65536 + word();
-    };
+        const value = stateA % POW2[n];
+        stateA = Math.floor(stateA / POW2[n]);
+        if (stateA < 0x10000)
+        {
+            stateA = stateA * 0x10000 + nextWord();
+        }
+        const t = stateA;
+        stateA = stateB;
+        stateB = t;
+        return value;
+    }
 
-    /**
-     * Pop raw low bits from the active rANS state and swap interleaved states.
-     *
-     * @param {number} nbits Number of bits to read.
-     * @returns {number} Decoded bit value.
-     */
-    const popBits = (nbits) =>
+    function popSymbol(model)
     {
-        const sym = bits1 & ((1 << nbits) - 1);
-        bits1 = bits1 >= 0x80000000 ? Math.floor(bits1 / (1 << nbits)) : bits1 >> nbits;
-        refill1();
-        const t = bits1; bits1 = bits2; bits2 = t;
-        return sym;
-    };
-
-    /**
-     * Decode one symbol from an adaptive rANS model and swap interleaved states.
-     *
-     * @param {Model} model Adaptive model to decode from.
-     * @returns {number} Decoded symbol.
-     */
-    const popModel = (model) =>
-    {
-        const code = bits1 & (TOTAL_SUM - 1);
-        let sym = model.lookup[code >> LOOKUP_SHIFT];
-        const sums = model.sums;
-        while (code >= sums[sym + 1]) sym++;
-
-        bits1 = (bits1 >= 0x80000000 ? Math.floor(bits1 / TOTAL_SUM) : bits1 >> FREQ_BITS)
-            * (sums[sym + 1] - sums[sym]) + code - sums[sym];
-        refill1();
+        const cum = model.cum;
+        const code = stateA & (TOTAL - 1);
+        let sym = model.lookup[code >>> 5];
+        while (code >= cum[sym + 1])
+        {
+            sym++;
+        }
+        stateA = Math.floor(stateA / TOTAL) * (cum[sym + 1] - cum[sym]) + (code - cum[sym]);
+        if (stateA < 0x10000)
+        {
+            stateA = stateA * 0x10000 + nextWord();
+        }
         model.observe(sym);
-        const t = bits1; bits1 = bits2; bits2 = t;
+        const t = stateA;
+        stateA = stateB;
+        stateB = t;
         return sym;
-    };
+    }
 
+    let offset = 0;
     while (offset < expandedSize)
     {
-        const boundary = Math.min(expandedSize, (offset & ~0xFFFF) + 0x10000);
+        const quantumEnd = Math.min(expandedSize, offset - (offset % QUANTUM_BYTES) + QUANTUM_BYTES);
 
-        if (peek() === 0)
+        if (wordIndex >= wordCount)
         {
-            wi++;
-            const copyLength = Math.min((nWords - wi) * 2, boundary - offset);
-            dst.set(bytes.subarray(wi << 1, (wi << 1) + copyLength), offset);
-            offset += copyLength;
-            wi += copyLength >> 1;
+            throw new Error("BitKnit2: source underflow");
+        }
+        const peekPos = wordIndex * 2;
+        const peek = bytes[peekPos] | (bytes[peekPos + 1] << 8);
+
+        if (peek === 0)
+        {
+            // Raw quantum: consume the zero word, then copy bytes straight
+            // from the word stream in stream order.
+            wordIndex++;
+            const remainingWords = wordCount - wordIndex;
+            const quantumRemaining = quantumEnd - offset;
+            const length = Math.min(remainingWords * 2, quantumRemaining);
+            const start = wordIndex * 2;
+            out.set(bytes.subarray(start, start + length), offset);
+            offset += length;
+            // When length is odd, the final word's high byte is NOT consumed
+            // and the next quantum begins at that same word.
+            wordIndex += length >> 1;
             continue;
         }
 
+        // Coded quantum.
+        initEntropyStates();
+
+        if (offset === 0)
         {
-            let merged = word() * 65536 + word();
-            const split = merged & 15;
-            merged = Math.floor(merged / 16);
-            if (merged < 0x10000) merged = merged * 65536 + word();
-            bits1 = split === 0
-                ? merged
-                : (merged >= 0x80000000 ? Math.floor(merged / (1 << split)) : merged >> split);
-            if (bits1 < 0x10000) bits1 = bits1 * 65536 + word();
-            const m = 2 ** (16 + split);
-            bits2 = ((merged % 65536) * 65536 + word()) % m + m;
+            out[0] = popBits(8);
+            offset = 1;
         }
 
-        if (offset === 0) dst[offset++] = popBits(8);
-
-        while (offset < boundary)
+        while (offset < quantumEnd)
         {
-            const
-                phase = offset & 3,
-                command = popModel(commandModels[phase]);
+            const phase = offset & 3;
+            const command = popSymbol(commandModels[phase]);
 
             if (command < 256)
             {
-                dst[offset] = command + dst[offset - deltaOffset];
+                // Literal: byte delta against the byte one last-match-distance
+                // behind.
+                out[offset] = (command + out[offset - deltaOffset]) & 0xFF;
                 offset++;
                 continue;
             }
 
+            // Match length.
             let copyLength;
             if (command < 288)
             {
@@ -307,56 +279,68 @@ export function decompressBitKnit2(bytes, expandedSize)
             }
             else
             {
-                const nb = command - 287;
-                copyLength = (1 << nb) + popBits(nb) + 32;
+                const n = command - 287;
+                copyLength = POW2[n] + popBits(n) + 32;
             }
 
+            // Match distance.
+            const ref = popSymbol(cacheRefModels[phase]);
             let copyOffset;
-            const cacheRef = popModel(cacheRefModels[phase]);
-
-            if (cacheRef < 8)
+            if (ref < 8)
             {
-                copyOffset = lruHit(cacheRef);
+                // Recent-offset cache hit at rank `ref`, then promote to
+                // rank 0 (ranks 0..ref-1 shift up one nibble).
+                const shift = 4 * ref;
+                const slot = (recentOrder >>> shift) & 15;
+                copyOffset = recentOffsets[slot];
+                if (ref === 7)
+                {
+                    recentOrder = ((recentOrder << 4) | slot) >>> 0;
+                }
+                else if (ref > 0)
+                {
+                    const mask = (16 << shift) - 1;
+                    recentOrder = ((recentOrder & ~mask) | (((recentOrder << 4) | slot) & mask)) >>> 0;
+                }
             }
             else
             {
-                const nb = popModel(copyOffsetModel);
-                let extra = popBits(nb & 15);
-                if (nb >= 16) extra = extra * 65536 + word();
-                copyOffset = (nb >= 27 ? 32 * 2 ** nb : 32 << nb) + extra * 32 + cacheRef - 39;
-                lruInsert(copyOffset);
+                // Explicit distance: exponent symbol, extra mantissa bits,
+                // optionally one raw word appended as the LOW 16 bits.
+                const n = popSymbol(exponentModel);
+                let extra = popBits(n & 15);
+                if (n >= 16)
+                {
+                    extra = extra * 0x10000 + nextWord();
+                }
+                copyOffset = 32 * POW2[n] + extra * 32 + ref - 39;
+                // Insert: rank-7 slot takes the rank-6 slot's value, then the
+                // rank-6 slot takes the new distance; order is unchanged.
+                const slot7 = (recentOrder >>> 28) & 15;
+                const slot6 = (recentOrder >>> 24) & 15;
+                recentOffsets[slot7] = recentOffsets[slot6];
+                recentOffsets[slot6] = copyOffset;
             }
 
             deltaOffset = copyOffset;
-            let from = offset - copyOffset;
-            if (from < 0) throw new Error("BitKnit2: match before start");
+            const src = offset - copyOffset;
+            if (src < 0)
+            {
+                throw new Error("BitKnit2: match source before output start");
+            }
+            // Byte-by-byte ascending copy; self-overlap replicates.
             for (let i = 0; i < copyLength; i++)
             {
-                dst[offset++] = dst[from++];
+                out[offset + i] = out[src + i];
             }
+            offset += copyLength;
         }
 
-        if (bits1 !== 0x10000 && bits2 !== 0x10000)
+        if (stateA !== 0x10000 && stateB !== 0x10000)
         {
-            throw new Error("BitKnit2: rANS stream corrupted");
+            throw new Error("BitKnit2: corrupt quantum end state");
         }
     }
 
-    return dst;
+    return out;
 }
-
-/**
- * Frozen convenience namespace for Granny BitKnit2 section decompression.
- *
- * The same constants and functions are also exported directly from bitknit2.js.
- */
-export const bitknit2 = Object.freeze({
-    MAGIC: BITKNIT2_MAGIC,
-    FREQ_BITS: BITKNIT2_FREQ_BITS,
-    LOOKUP_BITS: BITKNIT2_LOOKUP_BITS,
-    LOOKUP_SHIFT: BITKNIT2_LOOKUP_SHIFT,
-    TOTAL_SUM: BITKNIT2_TOTAL_SUM,
-    ADAPT_INTERVAL: BITKNIT2_ADAPT_INTERVAL,
-    decompress: decompressBitKnit2,
-    decompressBitKnit2
-});

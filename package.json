@@ -1,6 +1,6 @@
 {
   "name": "@carbonenginejs/format-gr2",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "CarbonEngineJS Granny format package. Decodes .gr2 and .gsf sections, walks the Granny type tree, and emits GR2 data or GState semantics.",
   "type": "module",
   "main": "src/index.js",
@@ -39,12 +39,13 @@
   "files": [
     "src",
     "bin",
+    "docs",
     "LICENSE",
     "NOTICE",
     "THIRD-PARTY-NOTICES.md",
     "README.md"
   ],
-  "license": "EUPL-1.2",
+  "license": "MIT",
   "dependencies": {
     "@carbonenginejs/core-math": "^0.1.5"
   },
